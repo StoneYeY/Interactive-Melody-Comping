@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<style>
+    /* 当用户输入时的样式 */
+    #userInput:focus {
+        border-color: #4CAF50;
+        box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    }
+
+    /* 自动生成指示器动画 */
+    @keyframes pulse {
+        0% { opacity: 0.7; }
+        50% { opacity: 1; }
+        100% { opacity: 0.7; }
+    }
+
+    #generating-indicator {
+        animation: pulse 1.5s infinite;
+    }
+
+    /* 错误消息样式 */
+    .error {
+        color: #f44336;
+        background-color: rgba(244, 67, 54, 0.1);
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+    }
+
+    /* 响应区域加载动画 */
+    .loading-response {
+        position: relative;
+        min-height: 50px;
+    }
+
+    .loading-response:after {
+        content: "";
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 30px;
+        height: 30px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #4CAF50;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: translateX(-50%) rotate(0deg); }
+        100% { transform: translateX(-50%) rotate(360deg); }
+    }
+</style>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piano Interactive Music Creation Tool</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
+    <script src="https://unpkg.com/tone"></script>
+    <script src="https://unpkg.com/@tonejs/midi"></script>
+
+    <script src="note_visualization.js"></script>
+    <script src="constants.js"></script>
+    <script src="keyboardInput.js"></script>
+    <script src="pianoroll.js"></script>
+    <script src="api.js"></script>
+    <script src="Tonejs-Instruments.js"></script>
+    <script src="app.js"></script>
+    <!-- 在现有的脚本引用之前添加 -->
+
+</head>
+<body>
+    <div class="splash">
+        <h1>Piano Interactive Music Creation Tool</h1>
+        <div class="splash-main">
+            <p>Generate chords from notes, or melodies from chords</p>
+            <button class="splash-button loading" id="playBtn" disabled onclick="showMainScreen()" autofocus><span>Loading...</span></button>
+        </div>
+    </div>
+
+    <div class="loaded" hidden>
+        <div class="container">
+            <div class="header">
+                <h2>Piano Interactive Music Creation Tool</h2>
+                <div class="mode-selector">
+                    <button class="mode-btn active" id="modeNotes">Notes → Chords</button>
+                    <button class="mode-btn" id="modeChords">Chords → Melody</button>
+                </div>
+            </div>
+
+            <div class="panels">
+                <div class="panel">
+                    <div class="panel-title">User Input</div>
+                    <!-- 键盘输入控制 -->
+                    <div class="keyboard-input-controls">
+                        <button id="toggleKeyboardInput" class="keyboard-toggle-btn">
+                            <span id="keyboardStatusText">KeyboardInput: Active</span>
+                        </button>
+                        <button id="showKeyboardGuide" class="info-btn">?</button>
+                    </div>
+
+                    <!-- 当前模式指示器 -->
+                    <div class="current-mode-indicator">
+                        Mode: <span id="currentModeDisplay">旋律 → 和弦</span>
+                    </div>
+                    <textarea id="userInput" placeholder="Enter note sequence (e.g. C4 E4 G4) or chord sequence (e.g. Cmaj7 Dm7 G7), based on selected mode"></textarea>
+                    <div class="controls">
+<!--                        <button id="generateBtn">Generate</button>-->
+                        <button id="clearBtn">Clear</button>
+                    </div>
+                </div>
+
+                <div class="panel" id="responsePanel">
+                    <div class="panel-title">System Response</div>
+                    <div id="responseContent"></div>
+                </div>
+            </div>
+
+            <div class="piano-panel">
+                <div class="panel-title">Piano Visualization</div>
+                <div class="piano-container" id="pianoroll"></div>
+                <div class="controls">
+                    <button id="playBtn2">Play</button>
+                    <button id="stopBtn">Stop</button>
+                    <button class="debug-button" id="metronomeBtn">Enable Metronome</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // Global variables
+    let piano_synth; // Piano synthesizer
+    let metronome; // Metronome
+    let metronome_status = false; // Metronome status
+    let currentMode = 'notes'; // Current mode: 'notes' or 'chords'
+    let visual; // Visualization object
+    let drawLoop; // Draw loop
+    let generatedResult = null; // Generated result
+
+    // Constants
+    const CYCLE = 2; // 2 bars cycle
+    let CYCLE_NUM_BEAT = CYCLE > 0 ? CYCLE * 4 : 8;
+    let CYCLE_STRING = `${Math.floor(CYCLE_NUM_BEAT / 4)}m`;
+
+    // Initialize welcome screen on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set up UI details
+        setupUI();
+        // Initialize audio and MIDI
+        initialize();
+    });
+
+    // Set up UI details
+    function setupUI() {
+        // Initialize mode selection button events
+        const modeNotesBtn = document.getElementById('modeNotes');
+        const modeChordsBtn = document.getElementById('modeChords');
+
+        modeNotesBtn.addEventListener('click', function() {
+            currentMode = 'notes';
+            modeNotesBtn.classList.add('active');
+            modeChordsBtn.classList.remove('active');
+            document.getElementById('userInput').placeholder = "Enter note sequence (e.g. C4 E4 G4)";
+        });
+
+        modeChordsBtn.addEventListener('click', function() {
+            currentMode = 'chords';
+            modeChordsBtn.classList.add('active');
+            modeNotesBtn.classList.remove('active');
+            document.getElementById('userInput').placeholder = "Enter chord sequence (e.g. Cmaj7 Dm7 G7)";
+        });
+
+        // Initialize button events
+        document.getElementById('generateBtn').addEventListener('click', generateContent);
+        document.getElementById('clearBtn').addEventListener('click', clearContent);
+        document.getElementById('playBtn2').addEventListener('click', playMusic);
+        document.getElementById('stopBtn').addEventListener('click', stopMusic);
+        document.getElementById('metronomeBtn').addEventListener('click', toggleMetronome);
+    }
+
+    // Initialize audio and MIDI
+    async function initialize() {
+        // Set sampler base URL
+        SampleLibrary.baseUrl = "https://lukewys.github.io/files/tonejs-samples/";
+
+        // Load piano and metronome
+        try {
+            piano_synth = await loadPiano();
+            piano_synth.toDestination();
+
+            metronome = await loadMetronome();
+            metronome.toDestination();
+
+            console.log('Audio loaded successfully!');
+
+            // Update button status
+            const playBtn = document.getElementById('playBtn');
+            playBtn.textContent = 'Start';
+            playBtn.removeAttribute('disabled');
+            playBtn.classList.remove('loading');
+        } catch (err) {
+            console.error('Audio loading failed:', err);
+            alert('Audio loading failed, please refresh the page to retry.');
+        }
+    }
+    async function playMusicWithChords() {
+        if (!generatedResult) {
+            alert('请先生成音乐');
+            return;
+        }
+
+        // 确保音频上下文已启动
+        try {
+            await Tone.start();
+        } catch (err) {
+            console.error('启动音频上下文失败:', err);
+            alert('请点击页面以启用音频播放');
+
+            // 添加一次性点击监听器来启动音频
+            document.body.addEventListener('click', async () => {
+                await Tone.start();
+                playMusicWithChords(); // 再次尝试播放
+            }, { once: true });
+
+            return;
+        }
+
+        // 清除之前的音符
+        visual.clear();
+
+        // 开始播放动画
+        visual.start();
+
+        // 定义颜色序列
+        const colors = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
+
+        // 播放起始时间
+        let time = Tone.now() + 0.5; // 增加0.5秒延迟以便用户准备
+
+        // 根据当前模式处理不同的播放逻辑
+        if (currentMode === 'notes') {
+            // 播放输入的音符（旋律）和生成的和弦
+            const melody = generatedResult.input;
+            const chords = generatedResult.output;
+
+            // 确定每个音符和每个和弦的持续时间
+            const noteDuration = 0.5; // 每个音符持续0.5秒
+            const chordDuration = melody.length * noteDuration / chords.length; // 和弦持续时间按旋律长度分配
+
+            // 播放音符（旋律）
+            melody.forEach((note, index) => {
+                const color = colors[index % colors.length];
+
+                try {
+                    // 将音符转换为MIDI数字
+                    const midiNote = noteToMidi(note);
+
+                    // 安排音符播放
+                    piano_synth.triggerAttackRelease(note, noteDuration * 0.8, time + index * noteDuration);
+
+                    // 安排音符可视化
+                    setTimeout(() => {
+                        visual.noteOn(midiNote, color);
+
+                        // 音符释放计时
+                        setTimeout(() => {
+                            visual.noteOff(midiNote);
+                        }, noteDuration * 800);
+                    }, (time + index * noteDuration - Tone.now()) * 1000);
+                } catch (e) {
+                    console.error(`无法播放音符 ${note}:`, e);
+                }
+            });
+
+            // 播放和弦（和声）
+            chords.forEach((chord, index) => {
+                const chordStartTime = time + index * chordDuration;
+                const chordColor = colors[(index + 3) % colors.length]; // 使用不同的颜色区分和弦
+
+                // 获取和弦的所有音符
+                const chordNotes = chordToNotes(chord);
+
+                // 播放和弦中的每个音符
+                chordNotes.forEach(note => {
+                    try {
+                        const midiNote = noteToMidi(note);
+
+                        // 音量稍低以便旋律更突出
+                        const chordSynth = new Tone.Synth({
+                            volume: -8 // 和弦音量降低
+                        }).toDestination();
+
+                        // 触发和弦音符
+                        chordSynth.triggerAttackRelease(note, chordDuration * 0.9, chordStartTime);
+
+                        // 可视化
+                        setTimeout(() => {
+                            visual.noteOn(midiNote, chordColor);
+                            setTimeout(() => {
+                                visual.noteOff(midiNote);
+                            }, chordDuration * 900);
+                        }, (chordStartTime - Tone.now()) * 1000);
+                    } catch (e) {
+                        console.error(`无法播放和弦音符 ${note}:`, e);
+                    }
+                });
+            });
+        } else {
+            // 和弦→旋律模式：播放输入的和弦和生成的旋律
+            const chords = generatedResult.input;
+            const melody = generatedResult.output;
+
+            // 确定每个和弦和每个音符的持续时间
+            const chordDuration = 2; // 每个和弦持续2秒
+            const noteDuration = 0.25; // 每个音符持续0.25秒
+
+            // 播放和弦
+            chords.forEach((chord, index) => {
+                const chordStartTime = time + index * chordDuration;
+                const chordColor = colors[index % colors.length];
+
+                // 获取和弦的所有音符
+                const chordNotes = chordToNotes(chord);
+
+                // 播放和弦中的每个音符
+                chordNotes.forEach(note => {
+                    try {
+                        const midiNote = noteToMidi(note);
+
+                        // 触发和弦音符
+                        piano_synth.triggerAttackRelease(note, chordDuration * 0.9, chordStartTime);
+
+                        // 可视化
+                        setTimeout(() => {
+                            visual.noteOn(midiNote, chordColor);
+                            setTimeout(() => {
+                                visual.noteOff(midiNote);
+                            }, chordDuration * 900);
+                        }, (chordStartTime - Tone.now()) * 1000);
+                    } catch (e) {
+                        console.error(`无法播放和弦音符 ${note}:`, e);
+                    }
+                });
+            });
+
+            // 播放旋律
+            melody.forEach((note, index) => {
+                const color = colors[(index + 3) % colors.length]; // 使用不同的颜色区分旋律
+
+                try {
+                    // 将音符转换为MIDI数字
+                    const midiNote = noteToMidi(note);
+
+                    // 安排音符播放
+                    const melodySynth = new Tone.Synth({
+                        volume: -2 // 旋律音量稍高
+                    }).toDestination();
+
+                    melodySynth.triggerAttackRelease(note, noteDuration * 0.8, time + index * noteDuration);
+
+                    // 安排音符可视化
+                    setTimeout(() => {
+                        visual.noteOn(midiNote, color);
+
+                        // 音符释放计时
+                        setTimeout(() => {
+                            visual.noteOff(midiNote);
+                        }, noteDuration * 800);
+                    }, (time + index * noteDuration - Tone.now()) * 1000);
+                } catch (e) {
+                    console.error(`无法播放音符 ${note}:`, e);
+                }
+            });
+        }
+    }
+
+    // Load piano sound
+    function loadPiano() {
+        return new Promise((resolve) => {
+            const piano = SampleLibrary.load({
+                instruments: 'piano',
+                onload: () => {
+                    resolve(piano);
+                },
+            });
+        });
+    }
+
+    // Load metronome sound
+    function loadMetronome() {
+        return new Promise((resolve) => {
+            const metronome = SampleLibrary.load({
+                instruments: 'metronome',
+                onload: () => {
+                    resolve(metronome);
+                },
+            });
+        });
+    }
+
+    // Show main interface
+    function showMainScreen() {
+        document.querySelector('.splash').hidden = true;
+        document.querySelector('.loaded').hidden = false;
+
+        Tone.start();
+
+        // Initialize piano visualization
+        initPianoVisual();
+
+        // Enable MIDI input
+        WebMidi
+            .enable()
+            .then(onEnabled)
+            .catch(err => {
+                console.log("MIDI device not available, use mouse to click on keyboard.");
+                onEnabledClick();
+            });
+    }
+
+    // Initialize piano visualization
+    function initPianoVisual() {
+        const pianoDiv = document.getElementById('pianoroll');
+
+        // Create visualization object
+        visual = new NoteVisual(
+            pianoDiv,                   // Target div
+            'waterfall',                // Animation type
+            'vertical',                 // Direction
+            5,                          // Number of octaves (increased from 3 to 5)
+            2,                          // Starting octave (lowered from 4 to 2)
+            pianoDiv.offsetWidth,       // Width
+            pianoDiv.offsetHeight,      // Height
+            0,                          // x coordinate
+            0                           // y coordinate
+        );
+
+        // Create drawing loop
+        drawLoop = new DrawLoop(CONSTANTS.REFRESH_RATE);
+        drawLoop.addDrawFunctionFromVisual(visual);
+        drawLoop.startDrawLoop();
+
+        // Set cycle
+        visual.setCycle(CYCLE);
+
+        // Set Tone.js BPM
+        Tone.Transport.bpm.value = 120;
+    }
+
+    // MIDI keyboard input event
+    function onEnabled() {
+        // Reduce latency
+        Tone.context.lookAhead = 0.05;
+
+        // Check if there's a MIDI device
+        if (WebMidi.inputs.length < 1) {
+            console.log("No MIDI device detected, use mouse to click on keyboard.");
+            onEnabledClick();
+        } else {
+            console.log("MIDI device detected: " + WebMidi.inputs[0].name);
+            const mySynth = WebMidi.inputs[0];
+
+            // Add MIDI event listeners
+            mySynth.channels[1].addListener("noteon", e => {
+                piano_synth.triggerAttack(e.note.identifier);
+                console.log(e.note.identifier, e.note.number, 'on', Date.now());
+                visual.noteOn(e.note.number, getRandomColor());
+            });
+
+            mySynth.channels[1].addListener("noteoff", e => {
+                piano_synth.triggerRelease(e.note.identifier);
+                console.log(e.note.identifier, e.note.number, 'off', Date.now());
+                visual.noteOff(e.note.number);
+            });
+        }
+    }
+
+    // Mouse click keyboard event
+    function onEnabledClick() {
+        const keys = document.querySelectorAll('#svg rect');
+        const pianoNotes = ['A0', 'A#0', 'B0', 'C1', 'C#1', 'D1', 'D#1', 'E1', 'F1', 'F#1', 'G1', 'G#1', 'A1', 'A#1', 'B1', 'C2', 'C#2',
+            'D2', 'D#2', 'E2', 'F2', 'F#2', 'G2', 'G#2', 'A2', 'A#2', 'B2', 'C3', 'C#3', 'D3', 'D#3', 'E3', 'F3', 'F#3', 'G3', 'G#3', 'A3',
+            'A#3', 'B3', 'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4', 'C5', 'C#5', 'D5', 'D#5', 'E5', 'F5',
+            'F#5', 'G5', 'G#5', 'A5', 'A#5', 'B5', 'C6', 'C#6', 'D6', 'D#6', 'E6', 'F6', 'F#6', 'G6', 'G#6', 'A6', 'A#6', 'B6', 'C7', 'C#7',
+            'D7', 'D#7', 'E7', 'F7', 'F#7', 'G7', 'G#7', 'A7', 'A#7', 'B7', 'C8'];
+
+        keys.forEach(key => {
+            // Mouse down triggers note
+            key.addEventListener('mousedown', () => {
+                const index = key.getAttribute('data-index');
+                const note = pianoNotes[index];
+                const num = parseInt(index) + 21;
+                piano_synth.triggerAttack(note);
+                console.log(note, num, 'on', Date.now());
+                visual.noteOn(num, getRandomColor());
+            });
+
+            // Mouse up releases note
+            key.addEventListener('mouseup', () => {
+                const index = key.getAttribute('data-index');
+                const note = pianoNotes[index];
+                const num = parseInt(index) + 21;
+                piano_synth.triggerRelease(note);
+                console.log(note, num, 'off', Date.now());
+                visual.noteOff(num);
+            });
+
+            // Mouse leave also releases note
+            key.addEventListener('mouseleave', () => {
+                const index = key.getAttribute('data-index');
+                if(key.getAttribute('active')) {
+                    const note = pianoNotes[index];
+                    const num = parseInt(index) + 21;
+                    piano_synth.triggerRelease(note);
+                    console.log(note, num, 'off', Date.now());
+                    visual.noteOff(num);
+                }
+            });
+        });
+    }
+
+    // Generate content
+    function generateContent() {
+        const userInput = document.getElementById('userInput').value.trim();
+        if (!userInput) {
+            alert('Please enter ' + (currentMode === 'notes' ? 'note sequence' : 'chord sequence'));
+            return;
+        }
+
+        // Show loading status
+        document.getElementById('responseContent').innerHTML = '<p>Generating...</p>';
+
+        // Call mock API to generate content
+        simulateBackendResponse(userInput, currentMode)
+            .then(result => {
+                generatedResult = result;
+
+                // Display result
+                let html = `
+                    <h3>Input: ${result.input.join(' ')}</h3>
+                    <h3>Output: ${result.output.join(' ')}</h3>
+                    <p>${result.description}</p>
+                `;
+
+                document.getElementById('responseContent').innerHTML = html;
+            })
+            .catch(err => {
+                document.getElementById('responseContent').innerHTML = `<p>Error: ${err.message}</p>`;
+            });
+    }
+
+    // Clear content
+    function clearContent() {
+        document.getElementById('userInput').value = '';
+        document.getElementById('responseContent').innerHTML = '';
+        visual.clear();
+        generatedResult = null;
+    }
+
+    // Convert chord name to array of notes
+    function chordToNotes(chordName) {
+        // Chord to note mapping
+        const chordNoteMap = {
+            'C': ['C4', 'E4', 'G4'],
+            'Cm': ['C4', 'D#4', 'G4'],
+            'C7': ['C4', 'E4', 'G4', 'A#4'],
+            'Cmaj7': ['C4', 'E4', 'G4', 'B4'],
+            'D': ['D4', 'F#4', 'A4'],
+            'Dm': ['D4', 'F4', 'A4'],
+            'D7': ['D4', 'F#4', 'A4', 'C5'],
+            'Dmaj7': ['D4', 'F#4', 'A4', 'C#5'],
+            'E': ['E4', 'G#4', 'B4'],
+            'Em': ['E4', 'G4', 'B4'],
+            'E7': ['E4', 'G#4', 'B4', 'D5'],
+            'Emaj7': ['E4', 'G#4', 'B4', 'D#5'],
+            'F': ['F4', 'A4', 'C5'],
+            'Fm': ['F4', 'G#4', 'C5'],
+            'F7': ['F4', 'A4', 'C5', 'D#5'],
+            'Fmaj7': ['F4', 'A4', 'C5', 'E5'],
+            'G': ['G4', 'B4', 'D5'],
+            'Gm': ['G4', 'A#4', 'D5'],
+            'G7': ['G4', 'B4', 'D5', 'F5'],
+            'Gmaj7': ['G4', 'B4', 'D5', 'F#5'],
+            'A': ['A4', 'C#5', 'E5'],
+            'Am': ['A4', 'C5', 'E5'],
+            'A7': ['A4', 'C#5', 'E5', 'G5'],
+            'Amaj7': ['A4', 'C#5', 'E5', 'G#5'],
+            'B': ['B4', 'D#5', 'F#5'],
+            'Bm': ['B4', 'D5', 'F#5'],
+            'B7': ['B4', 'D#5', 'F#5', 'A5'],
+            'Bmaj7': ['B4', 'D#5', 'F#5', 'A#5'],
+            'Bdim': ['B4', 'D5', 'F5']
+        };
+
+        // Extract chord root and type
+        const rootMatch = chordName.match(/^([A-G][#b]?)(.*)/);
+        if (!rootMatch) return ['C4', 'E4', 'G4']; // Default to C major
+
+        const root = rootMatch[1];
+        const type = rootMatch[2] || '';
+
+        // Build full chord name
+        let fullChordName = root;
+        if (type.includes('m')) {
+            fullChordName += 'm';
+        } else if (type.includes('dim')) {
+            fullChordName += 'dim';
+        } else if (type.includes('maj7')) {
+            fullChordName += 'maj7';
+        } else if (type.includes('7')) {
+            fullChordName += '7';
+        }
+
+        // Get chord notes or default to C major if not found
+        return chordNoteMap[fullChordName] || chordNoteMap[root] || chordNoteMap['C'];
+    }
+
+    // Play music (both hands - input and output)
+    async function playMusic() {
+        if (!generatedResult) {
+            alert('Please generate music first');
+            return;
+        }
+
+        // Request audio context interaction
+        await Tone.start();
+
+        // Clear previous notes
+        visual.clear();
+
+        // Start playing animation
+        visual.start();
+
+        // Define color sequence
+        const rightHandColor = 'red';    // For input (e.g., melody)
+        const leftHandColor = 'blue';    // For output (e.g., chords)
+
+        // Prepare right hand (input) and left hand (output) notes
+        const rightHandNotes = [];
+        const leftHandNotes = [];
+
+        if (currentMode === 'notes') {
+            // Right hand: input notes
+            generatedResult.input.forEach(note => {
+                rightHandNotes.push({
+                    note: note,
+                    duration: '8n',
+                    color: rightHandColor
+                });
+            });
+
+            // Left hand: ONE generated chord
+            if (generatedResult.output.length > 0) {
+                const chord = generatedResult.output[0]; // Just one chord
+
+                // Get the notes for this chord
+                const chordNotes = chordToNotes(chord);
+
+                // Add each note in the chord to the playback queue
+                chordNotes.forEach(chordNote => {
+                    leftHandNotes.push({
+                        note: chordNote,
+                        duration: '2n', // Hold chord longer
+                        color: leftHandColor,
+                        timing: 0 // Play at beginning
+                    });
+                });
+            }
+        } else { // Chords → Melody mode
+            // Left hand: input chords
+            generatedResult.input.forEach((chord, index) => {
+                // Get the notes for this chord
+                const chordNotes = chordToNotes(chord);
+
+                // Add each note in the chord to the playback queue
+                chordNotes.forEach(chordNote => {
+                    leftHandNotes.push({
+                        note: chordNote,
+                        duration: '2n', // Hold chords longer
+                        color: leftHandColor,
+                        timing: index * 1.0 // One chord per measure
+                    });
+                });
+            });
+
+            // Right hand: generated melody
+            generatedResult.output.forEach((note, index) => {
+                rightHandNotes.push({
+                    note: note,
+                    duration: '8n',
+                    color: rightHandColor,
+                    timing: index * 0.25 // Standard eighth note timing
+                });
+            });
+        }
+
+        // Start playing both hands
+        let now = Tone.now();
+
+        // Schedule right hand notes (usually melody)
+        rightHandNotes.forEach((noteInfo, index) => {
+            const time = now + (noteInfo.timing !== undefined ? noteInfo.timing : index * 0.25);
+
+            try {
+                // Convert note to MIDI number
+                const midiNote = noteToMidi(noteInfo.note);
+
+                // Play the note
+                piano_synth.triggerAttackRelease(noteInfo.note, noteInfo.duration, time, 0.7); // Lower velocity
+
+                // Schedule note visualization
+                setTimeout(() => {
+                    visual.noteOn(midiNote, noteInfo.color);
+
+                    // Schedule note release
+                    setTimeout(() => {
+                        visual.noteOff(midiNote);
+                    }, 400);
+                }, (time - Tone.now()) * 1000);
+            } catch (e) {
+                console.error(`Cannot play right hand note ${noteInfo.note}:`, e);
+            }
+        });
+
+        // Schedule left hand notes (usually chords)
+        leftHandNotes.forEach((noteInfo) => {
+            const time = now + (noteInfo.timing !== undefined ? noteInfo.timing : 0);
+
+            try {
+                // Convert note to MIDI number
+                const midiNote = noteToMidi(noteInfo.note);
+
+                // Play the note
+                piano_synth.triggerAttackRelease(noteInfo.note, noteInfo.duration, time, 0.4); // Lower velocity for chord
+
+                // Schedule note visualization
+                setTimeout(() => {
+                    visual.noteOn(midiNote, noteInfo.color);
+
+                    // Schedule note release
+                    setTimeout(() => {
+                        visual.noteOff(midiNote);
+                    }, 600); // Longer hold for chord notes
+                }, (time - Tone.now()) * 1000);
+            } catch (e) {
+                console.error(`Cannot play left hand note ${noteInfo.note}:`, e);
+            }
+        });
+    }
+
+    // Stop music
+    function stopMusic() {
+        visual.stop();
+        piano_synth.releaseAll();
+    }
+
+    // Toggle metronome
+    function toggleMetronome() {
+        const metronomeBtn = document.getElementById('metronomeBtn');
+
+        if (metronome_status) {
+            metronome_status = false;
+            metronomeBtn.textContent = 'Enable Metronome';
+            Tone.Transport.stop();
+            Tone.Transport.cancel(); // Clear all scheduled events
+            visual.stop();
+        } else {
+            metronome_status = true;
+            metronomeBtn.textContent = 'Disable Metronome';
+
+            // Set up metronome
+            Tone.Transport.scheduleRepeat(time => {
+                metronome.triggerAttackRelease('C1', '8n', time);
+                if (CYCLE > 0) {
+                    visual.painter.clear();
+                }
+            }, CYCLE_STRING);
+
+            // Add weak beats
+            for (let i = 1; i < 8; i++) {
+                Tone.Transport.scheduleRepeat(time => {
+                    metronome.triggerAttackRelease('C0', '8n', time);
+                }, CYCLE_STRING, `+0:${i}:0`);
+            }
+
+            // Start Transport
+            Tone.Transport.start();
+            visual.start();
+        }
+    }
+
+    // Generate random color
+    function getRandomColor() {
+        const colors = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    // Convert note to MIDI number
+    function noteToMidi(note) {
+        // Example: 'C4' => 60
+        const noteMap = {
+            'C': 0, 'C#': 1, 'Db': 1,
+            'D': 2, 'D#': 3, 'Eb': 3,
+            'E': 4,
+            'F': 5, 'F#': 6, 'Gb': 6,
+            'G': 7, 'G#': 8, 'Ab': 8,
+            'A': 9, 'A#': 10, 'Bb': 10,
+            'B': 11
+        };
+
+        // Extract note name and octave from the note string
+        const match = note.match(/([A-G][#b]?)(\d+)/);
+        if (!match) return 60; // Default to C4
+
+        const noteName = match[1];
+        const octave = parseInt(match[2]);
+
+        // Calculate MIDI number
+        return (octave + 1) * 12 + noteMap[noteName];
+    }
+
+    // Mock backend API
+    function simulateBackendResponse(input, mode) {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                if (mode === 'notes') {
+                    // Parse input notes
+                    const notes = input.split(/[ ,]+/).filter(n => n.trim());
+
+                    // Generate just one chord based on all input notes
+
+                    // Extract all note names without octaves
+                    const noteNames = notes.map(note => {
+                        const match = note.match(/[A-G][#b]?/);
+                        return match ? match[0] : null;
+                    }).filter(name => name !== null);
+
+                    // Find the most common note to determine the chord root
+                    const noteCounts = {};
+                    let mostCommonNote = 'C'; // Default
+                    let maxCount = 0;
+
+                    noteNames.forEach(noteName => {
+                        noteCounts[noteName] = (noteCounts[noteName] || 0) + 1;
+                        if (noteCounts[noteName] > maxCount) {
+                            maxCount = noteCounts[noteName];
+                            mostCommonNote = noteName;
+                        }
+                    });
+
+                    // Determine chord type based on note combination
+                    let chordType = '';
+
+                    // Check if we have a third (major or minor)
+                    const noteIndices = {
+                        'C': 0, 'C#': 1, 'Db': 1,
+                        'D': 2, 'D#': 3, 'Eb': 3,
+                        'E': 4,
+                        'F': 5, 'F#': 6, 'Gb': 6,
+                        'G': 7, 'G#': 8, 'Ab': 8,
+                        'A': 9, 'A#': 10, 'Bb': 10,
+                        'B': 11
+                    };
+
+                    // Get root note index
+                    const rootIndex = noteIndices[mostCommonNote];
+
+                    // Check for minor third (3 semitones up from root)
+                    const minorThirdIndex = (rootIndex + 3) % 12;
+                    const minorThirdNote = Object.keys(noteIndices).find(note =>
+                        noteIndices[note] === minorThirdIndex && note.length <= 2); // avoid enharmonic duplicates
+
+                    // Check for major third (4 semitones up from root)
+                    const majorThirdIndex = (rootIndex + 4) % 12;
+                    const majorThirdNote = Object.keys(noteIndices).find(note =>
+                        noteIndices[note] === majorThirdIndex && note.length <= 2);
+
+                    // Check for seventh (10 or 11 semitones up from root)
+                    const minorSeventhIndex = (rootIndex + 10) % 12;
+                    const minorSeventhNote = Object.keys(noteIndices).find(note =>
+                        noteIndices[note] === minorSeventhIndex && note.length <= 2);
+
+                    const majorSeventhIndex = (rootIndex + 11) % 12;
+                    const majorSeventhNote = Object.keys(noteIndices).find(note =>
+                        noteIndices[note] === majorSeventhIndex && note.length <= 2);
+
+                    // Determine chord type
+                    if (noteNames.includes(minorThirdNote)) {
+                        chordType = 'm'; // Minor chord
+                        if (noteNames.includes(minorSeventhNote)) {
+                            chordType += '7'; // Minor seventh
+                        }
+                    } else if (noteNames.includes(majorThirdNote)) {
+                        // Major chord (no suffix needed)
+                        if (noteNames.includes(majorSeventhNote)) {
+                            chordType = 'maj7'; // Major seventh
+                        } else if (noteNames.includes(minorSeventhNote)) {
+                            chordType = '7'; // Dominant seventh
+                        }
+                    } else {
+                        // If no third is found, make a random choice
+                        const chordTypes = ['', 'm', '7', 'maj7', 'm7'];
+                        chordType = chordTypes[Math.floor(Math.random() * chordTypes.length)];
+                    }
+
+                    const chord = mostCommonNote + chordType;
+
+                    resolve({
+                        input: notes,
+                        output: [chord], // Single chord output
+                        description: 'Generated a single chord based on all input notes'
+                    });
+                } else {
+                    // Chord to note mapping
+                    const chordNoteMap = {
+                        'C': ['C4', 'E4', 'G4'],
+                        'Cm': ['C4', 'D#4', 'G4'],
+                        'C7': ['C4', 'E4', 'G4', 'A#4'],
+                        'Cmaj7': ['C4', 'E4', 'G4', 'B4'],
+                        'D': ['D4', 'F#4', 'A4'],
+                        'Dm': ['D4', 'F4', 'A4'],
+                        'D7': ['D4', 'F#4', 'A4', 'C5'],
+                        'E': ['E4', 'G#4', 'B4'],
+                        'Em': ['E4', 'G4', 'B4'],
+                        'F': ['F4', 'A4', 'C5'],
+                        'Fm': ['F4', 'G#4', 'C5'],
+                        'G': ['G4', 'B4', 'D5'],
+                        'G7': ['G4', 'B4', 'D5', 'F5'],
+                        'Am': ['A4', 'C5', 'E5'],
+                        'Bdim': ['B4', 'D5', 'F5']
+                    };
+
+                    // Parse input chords
+                    const chords = input.split(/[ ,]+/).filter(c => c.trim());
+                    let melody = [];
+
+                    // For each chord, generate melody
+                    chords.forEach(chord => {
+                        // Extract chord root and type
+                        const rootMatch = chord.match(/^([A-G][#b]?)(.*)/);
+                        if (!rootMatch) {
+                            melody = melody.concat(['C4', 'E4', 'G4']);
+                            return;
+                        }
+
+                        const root = rootMatch[1];
+                        const type = rootMatch[2] || '';
+
+                        // Build full chord name
+                        let fullChordName = root;
+                        if (type.includes('m')) {
+                            fullChordName += 'm';
+                        } else if (type.includes('dim')) {
+                            fullChordName += 'dim';
+                        } else if (type.includes('maj7')) {
+                            fullChordName += 'maj7';
+                        } else if (type.includes('7')) {
+                            fullChordName += '7';
+                        }
+
+                        // Get chord notes
+                        let notes = chordNoteMap[fullChordName] || chordNoteMap[root] || chordNoteMap['C'];
+
+                        // Create melody patterns
+                        const patterns = [
+                            // Ascending melody
+                            [0, 1, 2, 3],
+                            // Descending melody
+                            [3, 2, 1, 0],
+                            // Oscillating melody
+                            [0, 2, 1, 3],
+                            // Random selection
+                            [Math.floor(Math.random() * notes.length),
+                             Math.floor(Math.random() * notes.length),
+                             Math.floor(Math.random() * notes.length),
+                             Math.floor(Math.random() * notes.length)]
+                        ];
+
+                        // Randomly select a pattern
+                        const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+
+                        // Generate melody
+                        for (let i = 0; i < 4; i++) {
+                            const idx = pattern[i] % notes.length;
+                            melody.push(notes[idx]);
+                        }
+                    });
+
+                    resolve({
+                        input: chords,
+                        output: melody,
+                        description: 'Generated melodic line from the input chord progression'
+                    });
+                }
+            }, 500); // Simulate delay
+        });
+    }
+    </script>
+
+</body>
+</html>
