@@ -55,7 +55,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Piano Interactive Music Creation Tool</title>
+    <title>Piano Interactive Music Creation</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
     <script src="https://unpkg.com/tone"></script>
@@ -73,7 +73,7 @@
 </head>
 <body>
     <div class="splash">
-        <h1>Piano Interactive Music Creation Tool</h1>
+        <h1>Piano Interactive Music Creation </h1>
         <div class="splash-main">
             <p>Generate chords from notes, or melodies from chords</p>
             <button class="splash-button loading" id="playBtn" disabled onclick="showMainScreen()" autofocus><span>Loading...</span></button>
@@ -83,7 +83,7 @@
     <div class="loaded" hidden>
         <div class="container">
             <div class="header">
-                <h2>Piano Interactive Music Creation Tool</h2>
+                <h2>Piano Interactive Music Creation</h2>
                 <div class="mode-selector">
                     <button class="mode-btn active" id="modeNotes">Notes → Chords</button>
                     <button class="mode-btn" id="modeChords">Chords → Melody</button>
@@ -259,7 +259,7 @@
                     const midiNote = noteToMidi(note);
 
                     // 安排音符播放
-                    piano_synth.triggerAttackRelease(note, noteDuration * 0.8, time + index * noteDuration);
+                    piano_synth.triggerAttackRelease(note, noteDuration, time + index * noteDuration);
 
                     // 安排音符可视化
                     setTimeout(() => {

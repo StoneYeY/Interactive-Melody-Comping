@@ -1,6 +1,6 @@
 /**
  * keyboardInput.js
- * 处理键盘输入并映射到钢琴卷帘 - 默认录制模式版本
+ * Handles keyboard input and maps it to piano roll - Default recording mode version
  */
 
 class KeyboardInput {
@@ -8,18 +8,18 @@ class KeyboardInput {
         this.pianoVisual = pianoVisual;
         this.audioEngine = audioEngine;
         this.isEnabled = true;
-        this.pressedKeys = new Set(); // 跟踪按下的键
-        this.currentOctave = 4; // 默认八度
-        this.sustainMode = false; // 延音模式
+        this.pressedKeys = new Set(); // Track pressed keys
+        this.currentOctave = 4; // Default octave
+        this.sustainMode = false; // Sustain mode
 
-        // 🆕 录制模式相关
-        this.recordingMode = true; // 🎯 默认开启录制模式
-        this.noteStartTimes = new Map(); // 记录每个键的开始时间
-        this.pendingNotes = new Map(); // 待更新时值的音符
+        // 🆕 Recording mode related
+        this.recordingMode = true; // 🎯 Recording mode enabled by default
+        this.noteStartTimes = new Map(); // Track start time for each key
+        this.pendingNotes = new Map(); // Notes waiting for duration updates
 
-        // 键盘映射 - 基于标准钢琴键盘布局
+        // Keyboard mapping - Based on standard piano keyboard layout
         this.keyMap = {
-            // 白键 (一个八度)
+            // White keys (one octave)
             'KeyA': { note: 'C', color: 'white' },
             'KeyS': { note: 'D', color: 'white' },
             'KeyD': { note: 'E', color: 'white' },
@@ -28,23 +28,23 @@ class KeyboardInput {
             'KeyH': { note: 'A', color: 'white' },
             'KeyJ': { note: 'B', color: 'white' },
 
-            // 黑键
+            // Black keys
             'KeyW': { note: 'C#', color: 'black' },
             'KeyE': { note: 'D#', color: 'black' },
             'KeyT': { note: 'F#', color: 'black' },
             'KeyY': { note: 'G#', color: 'black' },
             'KeyU': { note: 'A#', color: 'black' },
 
-            // 下一个八度的白键
+            // Next octave white keys
             'KeyK': { note: 'C', octaveOffset: 1, color: 'white' },
             'KeyL': { note: 'D', octaveOffset: 1, color: 'white' },
             'Semicolon': { note: 'E', octaveOffset: 1, color: 'white' },
 
-            // 下一个八度的黑键
+            // Next octave black keys
             'KeyI': { note: 'C#', octaveOffset: 1, color: 'black' },
             'KeyO': { note: 'D#', octaveOffset: 1, color: 'black' },
 
-            // 低八度的音符 (Z键行)
+            // Lower octave notes (Z row)
             'KeyZ': { note: 'C', octaveOffset: -1, color: 'white' },
             'KeyX': { note: 'D', octaveOffset: -1, color: 'white' },
             'KeyC': { note: 'E', octaveOffset: -1, color: 'white' },
@@ -53,7 +53,7 @@ class KeyboardInput {
             'KeyN': { note: 'A', octaveOffset: -1, color: 'white' },
             'KeyM': { note: 'B', octaveOffset: -1, color: 'white' },
 
-            // 低八度的黑键
+            // Lower octave black keys
             'KeyQ': { note: 'C#', octaveOffset: -1, color: 'black' },
             'Digit2': { note: 'D#', octaveOffset: -1, color: 'black' },
             'Digit4': { note: 'F#', octaveOffset: -1, color: 'black' },
@@ -61,7 +61,7 @@ class KeyboardInput {
             'Digit6': { note: 'A#', octaveOffset: -1, color: 'black' }
         };
 
-        // 控制键映射
+        // Control keys mapping
         this.controlKeys = {
             'ArrowLeft': () => this.changeOctave(-1),
             'ArrowRight': () => this.changeOctave(1),
@@ -69,50 +69,50 @@ class KeyboardInput {
             'Escape': () => this.stopAllNotes(),
             'Enter': () => this.addCurrentNotesToInput(),
             'Backspace': () => this.clearLastNote(),
-            'KeyR': () => this.toggleRecordingMode(), // R键切换录制模式
+            'KeyR': () => this.toggleRecordingMode(), // R key toggles recording mode
         };
 
-        // 初始化
+        // Initialize
         this.init();
         this.createKeyboardGuide();
     }
 
     init() {
-        // 绑定键盘事件
+        // Bind keyboard events
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
         document.addEventListener('keyup', (e) => this.handleKeyUp(e));
 
-        // 防止页面滚动等默认行为
+        // Prevent default behavior like page scrolling
         document.addEventListener('keydown', (e) => {
             if (this.isEnabled && (this.keyMap[e.code] || this.controlKeys[e.code])) {
                 e.preventDefault();
             }
         });
 
-        // 当窗口失去焦点时停止所有音符
+        // Stop all notes when window loses focus
         window.addEventListener('blur', () => {
             this.stopAllNotes();
         });
 
-        console.log('🎹 键盘输入已初始化 - 默认录制模式开启');
+        console.log('🎹 Keyboard input initialized - Default recording mode enabled');
     }
 
     handleKeyDown(e) {
         if (!this.isEnabled) return;
 
-        // 如果用户正在输入框中打字，不处理钢琴键盘
+        // Don't process piano keys if user is typing in an input field
         if (this.isTypingInInput(e.target)) return;
 
         const keyCode = e.code;
 
-        // 处理控制键
+        // Handle control keys
         if (this.controlKeys[keyCode]) {
             e.preventDefault();
             this.controlKeys[keyCode]();
             return;
         }
 
-        // 处理音符键
+        // Handle note keys
         if (this.keyMap[keyCode] && !this.pressedKeys.has(keyCode)) {
             e.preventDefault();
             this.pressedKeys.add(keyCode);
@@ -125,7 +125,7 @@ class KeyboardInput {
 
         const keyCode = e.code;
 
-        // 处理音符键释放
+        // Handle note key release
         if (this.keyMap[keyCode] && this.pressedKeys.has(keyCode)) {
             e.preventDefault();
             this.pressedKeys.delete(keyCode);
@@ -144,29 +144,29 @@ class KeyboardInput {
         const noteWithOctave = mapping.note + octave;
         const midiNote = this.noteToMidi(noteWithOctave);
 
-        // 🆕 录制开始时间
+        // 🆕 Record start time
         if (this.recordingMode) {
             this.noteStartTimes.set(keyCode, Date.now());
         }
 
-        // 播放音频
+        // Play audio
         if (this.audioEngine && this.audioEngine.piano_synth) {
             this.audioEngine.piano_synth.triggerAttack(noteWithOctave);
         }
 
-        // 显示在钢琴卷帘上
+        // Display on piano roll
         if (this.pianoVisual) {
             const color = this.getRandomColor();
             this.pianoVisual.noteOn(midiNote, color);
         }
 
-        // 🆕 添加音符到输入（临时时值）
+        // 🆕 Add note to input (temporary duration)
         this.addNoteToUserInput(noteWithOctave, keyCode);
 
-        // 显示当前播放的音符
+        // Display current playing note
         this.showCurrentNote(noteWithOctave);
 
-        console.log(`🎹 开始播放: ${noteWithOctave} (MIDI: ${midiNote})`);
+        console.log(`🎹 Playing: ${noteWithOctave} (MIDI: ${midiNote})`);
     }
 
     stopNote(keyCode) {
@@ -177,43 +177,43 @@ class KeyboardInput {
         const noteWithOctave = mapping.note + octave;
         const midiNote = this.noteToMidi(noteWithOctave);
 
-        // 🆕 录制模式：计算实际时值并更新
+        // 🆕 Recording mode: calculate actual duration and update
         if (this.recordingMode && this.noteStartTimes.has(keyCode)) {
             const actualDuration = this.calculateActualDuration(keyCode);
             this.updateNoteWithActualDuration(keyCode, actualDuration);
             this.noteStartTimes.delete(keyCode);
         }
 
-        // 停止音频
+        // Stop audio
         if (this.audioEngine && this.audioEngine.piano_synth) {
             this.audioEngine.piano_synth.triggerRelease(noteWithOctave);
         }
 
-        // 在钢琴卷帘上释放
+        // Release on piano roll
         if (this.pianoVisual) {
             this.pianoVisual.noteOff(midiNote);
         }
 
-        console.log(`🎹 停止播放: ${noteWithOctave}`);
+        console.log(`🎹 Stopped: ${noteWithOctave}`);
     }
 
-    // 🆕 计算实际时值（基于按键时长）
+    // 🆕 Calculate actual duration (based on key press time)
     calculateActualDuration(keyCode) {
         const startTime = this.noteStartTimes.get(keyCode);
-        if (!startTime) return 4; // 默认4个16分音符
+        if (!startTime) return 4; // Default 4 sixteenth notes
 
         const pressDurationMs = Date.now() - startTime;
         const pressDurationSeconds = pressDurationMs / 1000;
 
-        // 将秒转换为16分音符数量（120 BPM = 0.125秒每16分音符）
+        // Convert seconds to sixteenth note count (120 BPM = 0.125s per sixteenth note)
         const sixteenthNoteLength = 0.125;
         const calculatedDuration = Math.max(1, Math.round(pressDurationSeconds / sixteenthNoteLength));
 
-        console.log(`⏱️ 按键时长: ${pressDurationMs}ms → ${calculatedDuration}个16分音符`);
+        console.log(`⏱️ Key press duration: ${pressDurationMs}ms → ${calculatedDuration} sixteenth notes`);
         return calculatedDuration;
     }
 
-    // 🆕 添加音符到输入（支持录制模式）
+    // 🆕 Add note to input (supports recording mode)
     addNoteToUserInput(noteWithOctave, keyCode) {
         const userInput = document.getElementById('userInput');
         if (!userInput) return;
@@ -223,28 +223,28 @@ class KeyboardInput {
         }
 
         if (this.recordingMode) {
-            // 录制模式：先添加临时时值，释放键时更新
-            const tempDuration = 4; // 临时默认值
+            // Recording mode: add temporary duration first, update when key released
+            const tempDuration = 4; // Temporary default
             userInput.value += `${noteWithOctave}:${tempDuration}`;
 
-            // 记录这个音符在输入中的位置，以便后续更新
+            // Record this note's position in input for later update
             this.pendingNotes.set(keyCode, {
                 note: noteWithOctave,
                 inputPosition: this.getLastNotePosition(userInput.value)
             });
         } else {
-            // 非录制模式：使用默认时值
+            // Non-recording mode: use default duration
             userInput.value += `${noteWithOctave}:4`;
         }
     }
 
-    // 🆕 获取最后一个音符在输入中的位置
+    // 🆕 Get last note's position in input
     getLastNotePosition(inputValue) {
         const parts = inputValue.trim().split(' ');
         return parts.length - 1;
     }
 
-    // 🆕 更新音符的实际时值
+    // 🆕 Update note with actual duration
     updateNoteWithActualDuration(keyCode, actualDuration) {
         const userInput = document.getElementById('userInput');
         if (!userInput || !this.pendingNotes.has(keyCode)) return;
@@ -253,7 +253,7 @@ class KeyboardInput {
         const parts = userInput.value.trim().split(' ');
 
         if (parts.length > noteInfo.inputPosition) {
-            // 更新对应位置的音符时值
+            // Update note duration at corresponding position
             const notePart = parts[noteInfo.inputPosition];
             const colonIndex = notePart.indexOf(':');
 
@@ -262,42 +262,42 @@ class KeyboardInput {
                 parts[noteInfo.inputPosition] = `${noteName}:${actualDuration}`;
                 userInput.value = parts.join(' ');
 
-                console.log(`✅ 更新音符时值: ${noteName} → ${actualDuration}个16分音符`);
+                console.log(`✅ Updated note duration: ${noteName} → ${actualDuration} sixteenth notes`);
             }
         }
 
         this.pendingNotes.delete(keyCode);
     }
 
-    // 🆕 切换录制模式
+    // 🆕 Toggle recording mode
     toggleRecordingMode() {
         this.recordingMode = !this.recordingMode;
         this.updateRecordingDisplay();
 
         if (this.recordingMode) {
-            console.log('🔴 录制模式开启 - 按键时长将自动转换为音符时值');
+            console.log('🔴 Recording mode enabled - Key press duration will be converted to note duration');
         } else {
-            console.log('⚪ 录制模式关闭 - 使用固定时值');
+            console.log('⚪ Recording mode disabled - Using fixed durations');
         }
     }
 
     stopAllNotes() {
-        // 停止所有当前播放的音符
+        // Stop all currently playing notes
         for (const keyCode of this.pressedKeys) {
             this.stopNote(keyCode);
         }
         this.pressedKeys.clear();
 
-        // 清理录制相关数据
+        // Clear recording related data
         this.noteStartTimes.clear();
         this.pendingNotes.clear();
 
-        // 释放音频引擎中的所有音符
+        // Release all notes in audio engine
         if (this.audioEngine && this.audioEngine.piano_synth) {
             this.audioEngine.piano_synth.releaseAll();
         }
 
-        console.log('🛑 停止所有音符');
+        console.log('🛑 Stopped all notes');
     }
 
     changeOctave(direction) {
@@ -305,7 +305,7 @@ class KeyboardInput {
         if (newOctave >= 1 && newOctave <= 7) {
             this.currentOctave = newOctave;
             this.updateOctaveDisplay();
-            console.log(`🎼 切换到八度: ${this.currentOctave}`);
+            console.log(`🎼 Switched to octave: ${this.currentOctave}`);
         }
     }
 
@@ -314,15 +314,15 @@ class KeyboardInput {
         this.updateSustainDisplay();
 
         if (!this.sustainMode) {
-            // 如果关闭延音模式，释放所有音符
+            // If turning off sustain, release all notes
             this.stopAllNotes();
         }
 
-        console.log(`🎹 延音模式: ${this.sustainMode ? '开启' : '关闭'}`);
+        console.log(`🎹 Sustain mode: ${this.sustainMode ? 'ON' : 'OFF'}`);
     }
 
     addCurrentNotesToInput() {
-        // 将当前按下的所有音符添加为和弦
+        // Add all currently pressed notes as a chord
         const currentNotes = [];
         for (const keyCode of this.pressedKeys) {
             const mapping = this.keyMap[keyCode];
@@ -352,7 +352,7 @@ class KeyboardInput {
         }
     }
 
-    // 辅助函数
+    // Helper functions
     noteToMidi(note) {
         const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
         const match = note.match(/([A-G][#b]?)(\d+)/);
@@ -378,7 +378,7 @@ class KeyboardInput {
     showCurrentNote(note) {
         const indicator = document.getElementById('currentNoteIndicator');
         if (indicator) {
-            indicator.textContent = `当前音符: ${note}`;
+            indicator.textContent = `Current note: ${note}`;
             indicator.style.opacity = '1';
 
             setTimeout(() => {
@@ -390,41 +390,41 @@ class KeyboardInput {
     updateOctaveDisplay() {
         const display = document.getElementById('octaveDisplay');
         if (display) {
-            display.textContent = `八度: ${this.currentOctave}`;
+            display.textContent = `Octave: ${this.currentOctave}`;
         }
     }
 
     updateSustainDisplay() {
         const display = document.getElementById('sustainDisplay');
         if (display) {
-            display.textContent = `延音: ${this.sustainMode ? '开启' : '关闭'}`;
+            display.textContent = `Sustain: ${this.sustainMode ? 'ON' : 'OFF'}`;
             display.style.color = this.sustainMode ? '#4CAF50' : '#666';
         }
     }
 
-    // 🆕 更新录制模式显示
+    // 🆕 Update recording mode display
     updateRecordingDisplay() {
         const display = document.getElementById('recordingDisplay');
         if (display) {
-            display.textContent = `录制: ${this.recordingMode ? '开启' : '关闭'}`;
+            display.textContent = `Recording: ${this.recordingMode ? 'ON' : 'OFF'}`;
             display.style.color = this.recordingMode ? '#ff6b6b' : '#666';
             display.style.fontWeight = this.recordingMode ? 'bold' : 'normal';
         }
     }
 
-    // 创建键盘指南
+    // Create keyboard guide
     createKeyboardGuide() {
         const guide = document.createElement('div');
         guide.id = 'keyboardGuide';
         guide.className = 'keyboard-guide';
         guide.innerHTML = `
             <div class="guide-header">
-                <h4>🎹 录制模式键盘控制</h4>
-                <button id="toggleGuide" class="toggle-btn">隐藏</button>
+                <h4>🎹 Recording Mode Keyboard Controls</h4>
+                <button id="toggleGuide" class="toggle-btn">Hide</button>
             </div>
             <div class="guide-content" id="guideContent">
                 <div class="guide-section">
-                    <h5>🎵 音符输入:</h5>
+                    <h5>🎵 Note Input:</h5>
                     <div class="key-layout">
                         <div class="keyboard-row">
                             <span class="black-key">W</span>
@@ -455,80 +455,80 @@ class KeyboardInput {
                     </div>
                 </div>
                 <div class="guide-section">
-                    <h5>⏱️ 录制模式特性:</h5>
+                    <h5>⏱️ Recording Mode Features:</h5>
                     <ul>
-                        <li><strong>按键时长 = 音符时值</strong></li>
-                        <li>短按 → 短音符 (1-2个16分音符)</li>
-                        <li>长按 → 长音符 (8+个16分音符)</li>
-                        <li>松开键时自动计算并更新时值</li>
-                        <li>按 <kbd>R</kbd> 可切换录制模式开/关</li>
+                        <li><strong>Key press duration = Note duration</strong></li>
+                        <li>Short press → Short note (1-2 sixteenth notes)</li>
+                        <li>Long press → Long note (8+ sixteenth notes)</li>
+                        <li>Automatically calculates and updates duration on key release</li>
+                        <li>Press <kbd>R</kbd> to toggle recording mode</li>
                     </ul>
                 </div>
                 <div class="guide-section">
-                    <h5>🎮 控制键:</h5>
+                    <h5>🎮 Control Keys:</h5>
                     <ul>
-                        <li><kbd>←/→</kbd> - 切换八度</li>
-                        <li><kbd>空格</kbd> - 切换延音模式</li>
-                        <li><kbd>R</kbd> - 切换录制模式</li>
-                        <li><kbd>回车</kbd> - 添加和弦到输入</li>
-                        <li><kbd>退格</kbd> - 删除最后一个音符</li>
-                        <li><kbd>Esc</kbd> - 停止所有音符</li>
+                        <li><kbd>←/→</kbd> - Change octave</li>
+                        <li><kbd>Space</kbd> - Toggle sustain mode</li>
+                        <li><kbd>R</kbd> - Toggle recording mode</li>
+                        <li><kbd>Enter</kbd> - Add chord to input</li>
+                        <li><kbd>Backspace</kbd> - Delete last note</li>
+                        <li><kbd>Esc</kbd> - Stop all notes</li>
                     </ul>
                 </div>
                 <div class="guide-section">
-                    <h5>📊 状态指示:</h5>
+                    <h5>📊 Status Indicators:</h5>
                     <div class="status-indicators">
-                        <span id="octaveDisplay">八度: 4</span>
-                        <span id="sustainDisplay">延音: 关闭</span>
-                        <span id="recordingDisplay">录制: 开启</span>
-                        <span id="currentNoteIndicator">当前音符: -</span>
+                        <span id="octaveDisplay">Octave: 4</span>
+                        <span id="sustainDisplay">Sustain: OFF</span>
+                        <span id="recordingDisplay">Recording: ON</span>
+                        <span id="currentNoteIndicator">Current note: -</span>
                     </div>
                 </div>
                 <div class="guide-section">
-                    <h5>💡 输入格式:</h5>
-                    <p>自动生成格式: <code>音符:时值</code></p>
-                    <p>例如: <code>C4:2 D4:8 E4:4</code></p>
-                    <p class="highlight">⚡ 录制模式默认开启!</p>
+                    <h5>💡 Input Format:</h5>
+                    <p>Auto-generated format: <code>note:duration</code></p>
+                    <p>Example: <code>C4:2 D4:8 E4:4</code></p>
+                    <p class="highlight">⚡ Recording mode enabled by default!</p>
                 </div>
             </div>
         `;
 
-        // 添加到页面
+        // Add to page
         document.body.appendChild(guide);
 
-        // 添加切换显示/隐藏功能
+        // Add toggle show/hide functionality
         document.getElementById('toggleGuide').addEventListener('click', function() {
             const content = document.getElementById('guideContent');
             const button = this;
 
             if (content.style.display === 'none') {
                 content.style.display = 'block';
-                button.textContent = '隐藏';
+                button.textContent = 'Hide';
             } else {
                 content.style.display = 'none';
-                button.textContent = '显示';
+                button.textContent = 'Show';
             }
         });
 
-        // 初始化显示
+        // Initialize displays
         this.updateOctaveDisplay();
         this.updateSustainDisplay();
-        this.updateRecordingDisplay(); // 🆕 显示录制状态
+        this.updateRecordingDisplay(); // 🆕 Show recording status
     }
 
-    // 启用/禁用键盘输入
+    // Enable/disable keyboard input
     enable() {
         this.isEnabled = true;
-        console.log('🎹 键盘输入已启用');
+        console.log('🎹 Keyboard input enabled');
     }
 
     disable() {
         this.isEnabled = false;
         this.stopAllNotes();
-        console.log('🎹 键盘输入已禁用');
+        console.log('🎹 Keyboard input disabled');
     }
 
-    // 清理资源
+    // Clean up resources
     destroy() {
         this.stopAllNotes();
         document.removeEventListener('keydown', this.handleKeyDown);
@@ -539,105 +539,105 @@ class KeyboardInput {
             guide.remove();
         }
 
-        console.log('🎹 键盘输入已销毁');
+        console.log('🎹 Keyboard input destroyed');
     }
 }
 // =============================================================================
-// 🤖 KeyboardInput 自动生成和弦功能扩展
-// 添加到 keyboardInput.js 文件末尾
+// 🤖 KeyboardInput Auto Chord Generation Extension
+// Added at the end of keyboardInput.js
 // =============================================================================
 
 /**
- * 为KeyboardInput类添加自动生成和弦功能
- * 当用户停止弹奏2秒后，自动生成和弦并播放
+ * Adds auto chord generation functionality to KeyboardInput class
+ * When user stops playing for 2 seconds, automatically generates chords and plays them
  */
 
-// 扩展KeyboardInput类的原型，添加自动生成功能
+// Extend KeyboardInput prototype with auto-generation
 KeyboardInput.prototype.initAutoGeneration = function() {
-    console.log('🤖 初始化KeyboardInput自动生成功能...');
+    console.log('🤖 Initializing KeyboardInput auto-generation...');
 
-    // 自动生成相关属性
+    // Auto-generation properties
     this.autoGenerationEnabled = true;
     this.autoGenerationTimer = null;
-    this.autoGenerationDelay = 1000; // 2秒延迟
+    this.autoGenerationDelay = 1000; // 2 second delay
 
-    // 备份原始方法
+    // Backup original methods
     this._originalAddNoteToUserInput = this.addNoteToUserInput;
     this._originalUpdateNoteWithActualDuration = this.updateNoteWithActualDuration;
     this._originalStopAllNotes = this.stopAllNotes;
 
-    // 增强addNoteToUserInput方法
+    // Enhanced addNoteToUserInput method
     this.addNoteToUserInput = function(noteWithOctave, keyCode) {
-        // 调用原始方法
+        // Call original method
         this._originalAddNoteToUserInput(noteWithOctave, keyCode);
 
-        // 触发自动生成逻辑
-        this.triggerAutoGeneration(`键盘输入音符: ${noteWithOctave}`);
+        // Trigger auto-generation logic
+        this.triggerAutoGeneration(`Keyboard input note: ${noteWithOctave}`);
     };
 
-    // 增强updateNoteWithActualDuration方法（录制模式）
+    // Enhanced updateNoteWithActualDuration method (recording mode)
     this.updateNoteWithActualDuration = function(keyCode, actualDuration) {
-        // 调用原始方法
+        // Call original method
         this._originalUpdateNoteWithActualDuration(keyCode, actualDuration);
 
-        // 重新触发自动生成
-        this.triggerAutoGeneration('音符时值更新');
+        // Re-trigger auto-generation
+        this.triggerAutoGeneration('Note duration updated');
     };
 
-    // 增强stopAllNotes方法
+    // Enhanced stopAllNotes method
     this.stopAllNotes = function() {
-        // 调用原始方法
+        // Call original method
         this._originalStopAllNotes();
 
-        // 停止自动生成定时器
+        // Stop auto-generation timer
         this.stopAutoGeneration();
     };
 
-    console.log('✅ KeyboardInput自动生成功能初始化完成');
+    console.log('✅ KeyboardInput auto-generation initialized');
 };
 
-// 触发自动生成的核心方法
+// Core auto-generation trigger method
 KeyboardInput.prototype.triggerAutoGeneration = function(reason) {
     if (!this.autoGenerationEnabled) return;
 
-    console.log(`🎹 ${reason}，准备自动生成`);
+    console.log(`🎹 ${reason}, preparing auto-generation`);
 
-    // 清除之前的定时器
+    // Clear previous timer
     if (this.autoGenerationTimer) {
         clearTimeout(this.autoGenerationTimer);
-        console.log('⏰ 清除之前的自动生成定时器');
+        console.log('⏰ Cleared previous auto-generation timer');
     }
 
-    // 设置新的自动生成定时器
+    // Set new auto-generation timer
     this.autoGenerationTimer = setTimeout(async () => {
         const userInput = document.getElementById('userInput');
         if (userInput && userInput.value.trim()) {
             const inputValue = userInput.value.trim();
-            console.log('🚀 键盘输入2秒后自动生成和弦:', inputValue);
+            console.log('🚀 Auto-generating chords after 2 seconds:', inputValue);
 
             try {
-                // 显示生成状态
+                // Show generation status
                 this.showGenerationStatus('🎹 Generating...');
 
-                // 触发input事件以启动现有的生成逻辑
+                // Trigger input event to start existing generation logic
                 const inputEvent = new Event('input', { bubbles: true });
                 userInput.dispatchEvent(inputEvent);
 
-                console.log('✅ 成功触发自动生成');
+                console.log('✅ Auto-generation triggered successfully');
 
             } catch (error) {
-                console.error('❌ 键盘输入自动生成失败:', error);
-                this.showGenerationStatus(`❌ 生成失败: ${error.message}`, 'error');
+                console.error('❌ Keyboard input auto-generation failed:', error);
+                this.showGenerationStatus(`❌ Generation failed: ${error.message}`, 'error');
             }
         } else {
-            console.log('📝 输入框为空，跳过自动生成');
+            console.log('📝 Input empty, skipping auto-generation');
         }
     }, this.autoGenerationDelay);
 
-    console.log(`⏰ 设置${this.autoGenerationDelay/1000}秒自动生成定时器`);
+    console.log(`⏰ Set ${this.autoGenerationDelay/1000} second auto-generation timer`);
 };
 
-// 显示生成状态
+// Show generation status
 KeyboardInput.prototype.showGenerationStatus = function(message, type = 'info') {
     const responseContent = document.getElementById('responseContent');
     if (responseContent) {
@@ -650,136 +650,136 @@ KeyboardInput.prototype.showGenerationStatus = function(message, type = 'info') 
     }
 };
 
-// 停止自动生成
+// Stop auto-generation
 KeyboardInput.prototype.stopAutoGeneration = function() {
     if (this.autoGenerationTimer) {
         clearTimeout(this.autoGenerationTimer);
         this.autoGenerationTimer = null;
-        console.log('🛑 停止自动生成定时器');
+        console.log('🛑 Stopped auto-generation timer');
     }
 };
 
-// 设置自动生成延迟
+// Set auto-generation delay
 KeyboardInput.prototype.setAutoGenerationDelay = function(delayMs) {
     this.autoGenerationDelay = delayMs;
-    console.log(`⏰ 设置自动生成延迟为: ${delayMs}ms`);
+    console.log(`⏰ Set auto-generation delay to: ${delayMs}ms`);
 };
 
-// 启用/禁用自动生成
+// Enable/disable auto-generation
 KeyboardInput.prototype.toggleAutoGeneration = function() {
     this.autoGenerationEnabled = !this.autoGenerationEnabled;
     if (!this.autoGenerationEnabled) {
         this.stopAutoGeneration();
     }
-    console.log(`🤖 自动生成: ${this.autoGenerationEnabled ? '启用' : '禁用'}`);
+    console.log(`🤖 Auto-generation: ${this.autoGenerationEnabled ? 'Enabled' : 'Disabled'}`);
     return this.autoGenerationEnabled;
 };
 
-// 更新键盘指南，添加自动生成说明
+// Update keyboard guide with auto-generation instructions
 KeyboardInput.prototype.updateKeyboardGuideWithAutoGeneration = function() {
     const guideContent = document.getElementById('guideContent');
     if (!guideContent) return;
 
-    // 检查是否已经添加过
+    // Check if already added
     if (document.getElementById('autoGenerationSection')) return;
 
     const autoGenSection = document.createElement('div');
     autoGenSection.id = 'autoGenerationSection';
     autoGenSection.className = 'guide-section';
     autoGenSection.innerHTML = `
-        <h5>🤖 自动生成和弦:</h5>
+        <h5>🤖 Auto Chord Generation:</h5>
         <ul>
-            <li><strong>弹奏音符后停止2秒 → 自动生成和弦</strong></li>
-            <li>无需手动触发，系统自动检测输入停止</li>
-            <li>生成完成后自动播放和弦+旋律</li>
-            <li>支持录制模式的精确时值</li>
-            <li>按 <kbd>Ctrl+G</kbd> 可切换自动生成开/关</li>
+            <li><strong>After stopping playing for 2s → Auto-generate chords</strong></li>
+            <li>No manual trigger needed, system detects input stop</li>
+            <li>Plays chords + melody after generation</li>
+            <li>Supports recording mode's precise durations</li>
+            <li>Press <kbd>Ctrl+G</kbd> to toggle auto-generation</li>
         </ul>
         <div class="highlight" style="background: #e8f5e8; padding: 8px; border-radius: 4px; margin-top: 8px; border-left: 4px solid #4CAF50;">
-            ⚡ <strong>自动生成已启用！</strong><br>
-            现在用键盘弹奏音符，停止2秒后会自动生成和弦
+            ⚡ <strong>Auto-generation enabled!</strong><br>
+            Now play notes with keyboard, chords will auto-generate after 2s
         </div>
         <div class="status-line" style="margin-top: 8px; font-size: 0.9em; color: #666;">
-            <span id="autoGenStatus">状态: 启用</span> | 
-            <span id="autoGenDelay">延迟: 2.0秒</span>
+            <span id="autoGenStatus">Status: Enabled</span> | 
+            <span id="autoGenDelay">Delay: 2.0s</span>
         </div>
     `;
 
     guideContent.appendChild(autoGenSection);
 
-    // 添加快捷键支持
+    // Add shortcut support
     this.addAutoGenerationShortcuts();
 };
 
-// 添加自动生成快捷键
+// Add auto-generation shortcuts
 KeyboardInput.prototype.addAutoGenerationShortcuts = function() {
-    // 避免重复添加
+    // Avoid duplicate additions
     if (this._autoGenShortcutsAdded) return;
     this._autoGenShortcutsAdded = true;
 
     document.addEventListener('keydown', (e) => {
-        // Ctrl+G: 切换自动生成
+        // Ctrl+G: Toggle auto-generation
         if (e.ctrlKey && e.code === 'KeyG' && !this.isTypingInInput(e.target)) {
             e.preventDefault();
             const enabled = this.toggleAutoGeneration();
 
-            // 更新状态显示
+            // Update status display
             const statusElement = document.getElementById('autoGenStatus');
             if (statusElement) {
-                statusElement.textContent = `状态: ${enabled ? '启用' : '禁用'}`;
+                statusElement.textContent = `Status: ${enabled ? 'Enabled' : 'Disabled'}`;
                 statusElement.style.color = enabled ? '#4CAF50' : '#f44336';
             }
 
-            // 显示提示
-            this.showCurrentNote(`自动生成: ${enabled ? '启用' : '禁用'}`);
+            // Show notification
+            this.showCurrentNote(`Auto-gen: ${enabled ? 'ON' : 'OFF'}`);
         }
     });
 };
 
-// 在KeyboardInput实例创建时自动初始化
-// 修改constructor或使用下面的自动初始化代码
+// Automatically initialize when KeyboardInput instance is created
+// Modify constructor or use the auto-initialization code below
 
 // =============================================================================
-// 🚀 自动初始化代码 - 当页面加载完成后自动增强现有的KeyboardInput实例
+// 🚀 Auto-initialization code - Automatically enhances existing KeyboardInput instances when page loads
 // =============================================================================
 
-// 检查并增强现有的KeyboardInput实例
+// Check and enhance existing KeyboardInput instances
 function autoEnhanceKeyboardInput() {
-    console.log('🔍 检查是否需要增强KeyboardInput...');
+    console.log('🔍 Checking if KeyboardInput needs enhancement...');
 
-    // 等待keyboardInput实例创建
+    // Wait for keyboardInput instance creation
     const checkInterval = setInterval(() => {
         if (typeof keyboardInput !== 'undefined' && keyboardInput && !keyboardInput.autoGenerationEnabled) {
-            console.log('✅ 发现KeyboardInput实例，开始增强...');
+            console.log('✅ Found KeyboardInput instance, enhancing...');
 
-            // 初始化自动生成功能
+            // Initialize auto-generation
             keyboardInput.initAutoGeneration();
 
-            // 更新键盘指南
+            // Update keyboard guide
             setTimeout(() => {
                 keyboardInput.updateKeyboardGuideWithAutoGeneration();
             }, 1000);
 
-            console.log('🎉 KeyboardInput自动生成功能已启用！');
+            console.log('🎉 KeyboardInput auto-generation enabled!');
             console.log('');
-            console.log('📖 使用方法:');
-            console.log('1. 🎹 用键盘弹奏音符 (A=C, S=D, D=E, F=F, G=G, H=A, J=B)');
-            console.log('2. ⏰ 停止弹奏，等待2秒');
-            console.log('3. 🎵 系统自动生成和弦并播放');
-            console.log('4. 🎮 Ctrl+G 切换自动生成开/关');
+            console.log('📖 Usage:');
+            console.log('1. 🎹 Play notes with keyboard (A=C, S=D, D=E, F=F, G=G, H=A, J=B)');
+            console.log('2. ⏰ Stop playing, wait 2 seconds');
+            console.log('3. 🎵 System auto-generates chords and plays them');
+            console.log('4. 🎮 Ctrl+G to toggle auto-generation');
             console.log('');
 
             clearInterval(checkInterval);
         }
     }, 500);
 
-    // 10秒后停止检查
+    // Stop checking after 10 seconds
     setTimeout(() => {
         clearInterval(checkInterval);
     }, 10000);
 }
 
-// 如果页面已经加载完成，立即执行
+// If page already loaded, execute immediately
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autoEnhanceKeyboardInput);
 } else {
@@ -787,35 +787,35 @@ if (document.readyState === 'loading') {
 }
 
 // =============================================================================
-// 🛠️ 调试和测试工具
+// 🛠️ Debugging and Testing Tools
 // =============================================================================
 
-// 添加全局测试函数
+// Add global test function
 window.testKeyboardAutoGeneration = function() {
-    console.log('🧪 测试KeyboardInput自动生成功能...');
+    console.log('🧪 Testing KeyboardInput auto-generation...');
 
     if (!keyboardInput || !keyboardInput.autoGenerationEnabled) {
-        console.error('❌ KeyboardInput自动生成未启用');
+        console.error('❌ KeyboardInput auto-generation not enabled');
         return;
     }
 
-    console.log('📊 当前状态:');
-    console.log('- 自动生成启用:', keyboardInput.autoGenerationEnabled);
-    console.log('- 自动生成延迟:', keyboardInput.autoGenerationDelay + 'ms');
-    console.log('- 录制模式:', keyboardInput.recordingMode);
-    console.log('- 当前八度:', keyboardInput.currentOctave);
+    console.log('📊 Current status:');
+    console.log('- Auto-generation:', keyboardInput.autoGenerationEnabled);
+    console.log('- Auto-generation delay:', keyboardInput.autoGenerationDelay + 'ms');
+    console.log('- Recording mode:', keyboardInput.recordingMode);
+    console.log('- Current octave:', keyboardInput.currentOctave);
 
     console.log('');
-    console.log('🎹 开始模拟键盘输入测试...');
+    console.log('🎹 Starting simulated keyboard input test...');
 
-    // 模拟按键序列
+    // Simulate key presses
     ['KeyA', 'KeyS', 'KeyD'].forEach((keyCode, index) => {
         setTimeout(() => {
-            console.log(`🎹 模拟按下: ${keyCode}`);
+            console.log(`🎹 Simulating press: ${keyCode}`);
             keyboardInput.handleKeyDown({
                 code: keyCode,
                 preventDefault: () => {},
-                target: document.body // 确保不在输入框中
+                target: document.body // Ensure not in input field
             });
 
             setTimeout(() => {
@@ -827,27 +827,27 @@ window.testKeyboardAutoGeneration = function() {
         }, index * 600);
     });
 
-    console.log('⏰ 测试完成，等待2秒后应该自动生成和弦...');
+    console.log('⏰ Test complete, should auto-generate chords after 2 seconds...');
 };
 
-// 添加快速设置函数
+// Add quick setup function
 window.setAutoGenDelay = function(seconds) {
     if (keyboardInput) {
         keyboardInput.setAutoGenerationDelay(seconds * 1000);
 
-        // 更新显示
+        // Update display
         const delayElement = document.getElementById('autoGenDelay');
         if (delayElement) {
-            delayElement.textContent = `延迟: ${seconds}秒`;
+            delayElement.textContent = `Delay: ${seconds}s`;
         }
     }
 };
 
-console.log('🎹 KeyboardInput自动生成功能扩展已加载');
-console.log('🛠️ 调试命令: testKeyboardAutoGeneration()');
-console.log('🛠️ 设置延迟: setAutoGenDelay(1.5) // 1.5秒');
-console.log('🛠️ 快捷键: Ctrl+G 切换自动生成开/关');
-// 导出类
+console.log('🎹 KeyboardInput auto-generation extension loaded');
+console.log('🛠️ Debug commands: testKeyboardAutoGeneration()');
+console.log('🛠️ Set delay: setAutoGenDelay(1.5) // 1.5 seconds');
+console.log('🛠️ Shortcut: Ctrl+G to toggle auto-generation');
+// Export class
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = KeyboardInput;
 }

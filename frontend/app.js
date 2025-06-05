@@ -10,6 +10,9 @@ let keyboardInput = null;
 let midiInputNotes = []; // Store MIDI input notes
 let midiInputTimer = null; // MIDI input timer
 
+let lastMusicData = null;  // 存储最新音乐数据给Arco
+let arcoMusicBuffer = [];  // 存储完整的音乐句子
+
 // Constants
 const CYCLE = 2; // 2-bar cycle
 let CYCLE_NUM_BEAT = CYCLE > 0 ? CYCLE * 4 : 8;
@@ -255,7 +258,7 @@ function onEnabled() {
 
         mySynth.channels[1].addListener("noteon", e => {
             if (piano_synth) {
-                piano_synth.triggerAttack(e.note.identifier);
+                //piano_synth.triggerAttack(e.note.identifier);
             }
             console.log(e.note.identifier, e.note.number, 'on', Date.now());
             if (visual) {
@@ -288,7 +291,7 @@ function onEnabled() {
 
         mySynth.channels[1].addListener("noteoff", e => {
             if (piano_synth) {
-                piano_synth.triggerRelease(e.note.identifier);
+                //piano_synth.triggerRelease(e.note.identifier);
             }
             console.log(e.note.identifier, e.note.number, 'off', Date.now());
             if (visual) {
@@ -312,7 +315,7 @@ function onEnabledClick() {
             const note = pianoNotes[index];
             const num = parseInt(index) + 21;
             if (piano_synth) {
-                piano_synth.triggerAttack(note);
+                //piano_synth.triggerAttack(note);
             }
             console.log(note, num, 'on', Date.now());
             if (visual) {
@@ -346,7 +349,7 @@ function onEnabledClick() {
             const note = pianoNotes[index];
             const num = parseInt(index) + 21;
             if (piano_synth) {
-                piano_synth.triggerRelease(note);
+                //piano_synth.triggerRelease(note);
             }
             console.log(note, num, 'off', Date.now());
             if (visual) {
@@ -360,7 +363,7 @@ function onEnabledClick() {
                 const note = pianoNotes[index];
                 const num = parseInt(index) + 21;
                 if (piano_synth) {
-                    piano_synth.triggerRelease(note);
+                    //piano_synth.triggerRelease(note);
                 }
                 console.log(note, num, 'off', Date.now());
                 if (visual) {
@@ -419,6 +422,7 @@ async function generateContentWithAPI() {
 
                 if (generatedResult) {
                     generatedResult.description = '✅ Using real backend model - ' + generatedResult.description;
+                    collectMusicDataForArco(generatedResult);
                 }
 
             } catch (error) {
@@ -525,14 +529,11 @@ async function playMusicWithChords() {
     } catch (err) {
         console.error('Failed to start audio context:', err);
         alert('Please click the page to enable audio playback');
-
         document.body.addEventListener('click', async () => {
             if (typeof Tone !== 'undefined') {
                 await Tone.start();
             }
-            playMusicWithChords();
         }, { once: true });
-
         return;
     }
 
@@ -544,6 +545,7 @@ async function playMusicWithChords() {
     let time = (typeof Tone !== 'undefined' ? Tone.now() : Date.now() / 1000) + 0.5;
 
     if (currentMode === 'notes') {
+        // 输入模式：旋律 → 和弦
         const melody = generatedResult.input;
         const chords = generatedResult.output;
 
@@ -551,8 +553,11 @@ async function playMusicWithChords() {
         console.log('Melody data:', melody);
         console.log('Chord data:', chords);
 
+        // ========== 修复关键部分：确保时长匹配 ==========
+
+        // 1. 计算旋律总时长
+        const secondsPerSixteenth = 0.125; // 每个十六分音符的时长
         let melodyTotalDuration = 0;
-        const secondsPerSixteenth = 0.125;
         const melodyTimings = [];
         let currentPosition = 0;
 
@@ -564,7 +569,7 @@ async function playMusicWithChords() {
                 duration = noteData[1];
             } else if (typeof noteData === 'string') {
                 note = noteData;
-                duration = 4;
+                duration = 4; // 默认四分音符
             } else if (typeof noteData === 'number') {
                 note = noteData;
                 duration = 4;
@@ -588,11 +593,8 @@ async function playMusicWithChords() {
         });
 
         console.log(`Melody total duration: ${melodyTotalDuration.toFixed(2)}s, ${melodyTimings.length} notes`);
-        console.log('Melody timing details:');
-        melodyTimings.forEach((timing, i) => {
-            console.log(`   Note ${i+1}: ${timing.note} - ${timing.duration} sixteenth notes (${timing.durationSeconds.toFixed(2)}s)`);
-        });
 
+        // 2. 播放旋律（保持原速度）
         melodyTimings.forEach((noteInfo, index) => {
             try {
                 let noteToPlay;
@@ -607,7 +609,7 @@ async function playMusicWithChords() {
 
                 const midiNote = noteToMidi(noteToPlay);
 
-                console.log(`  Playing note ${index + 1}: ${noteToPlay} (original duration:${noteInfo.duration}, duration:${noteInfo.durationSeconds.toFixed(2)}s)`);
+                console.log(`  Playing note ${index + 1}: ${noteToPlay} (duration:${noteInfo.durationSeconds.toFixed(2)}s)`);
 
                 if (piano_synth && typeof Tone !== 'undefined') {
                     piano_synth.triggerAttackRelease(
@@ -634,8 +636,9 @@ async function playMusicWithChords() {
             }
         });
 
+        // 3. 和弦播放：确保与旋律总时长匹配
         const chordDuration = melodyTotalDuration / chords.length;
-        console.log(`Chord distribution: ${chords.length} chords, each ${chordDuration.toFixed(2)}s`);
+        console.log(`Chord distribution: ${chords.length} chords, each ${chordDuration.toFixed(2)}s (matched to melody duration)`);
 
         chords.forEach((chord, index) => {
             const chordStartTime = time + (index * chordDuration);
@@ -673,6 +676,7 @@ async function playMusicWithChords() {
         });
 
     } else {
+        // 输出模式：和弦 → 旋律
         const chords = generatedResult.input;
         const melody = generatedResult.output;
 
@@ -680,13 +684,19 @@ async function playMusicWithChords() {
         console.log('Chord data:', chords);
         console.log('Melody data:', melody);
 
-        const chordDuration = 2;
+        // ========== 修复关键部分：确保输出旋律速度匹配输入和弦 ==========
+
+        // 1. 设定和弦时长（标准）
+        const chordDuration = 2; // 每个和弦2秒
         const totalDuration = chords.length * chordDuration;
-        const noteDuration = totalDuration / melody.length;
+
+        // 2. 计算旋律音符时长：确保旋律总时长 = 和弦总时长
+        const melodyNoteDuration = totalDuration / melody.length;
 
         console.log(`Chord playback: ${chords.length} chords, each ${chordDuration}s`);
-        console.log(`Melody playback: ${melody.length} notes, each ${noteDuration.toFixed(2)}s`);
+        console.log(`Melody playback: ${melody.length} notes, each ${melodyNoteDuration.toFixed(2)}s (matched to chord duration)`);
 
+        // 3. 播放和弦
         chords.forEach((chord, index) => {
             const chordStartTime = time + index * chordDuration;
 
@@ -722,10 +732,11 @@ async function playMusicWithChords() {
             });
         });
 
+        // 4. 播放旋律：使用计算出的匹配时长
         melody.forEach((note, index) => {
-            const noteTime = time + (index * noteDuration);
+            const noteTime = time + (index * melodyNoteDuration);
 
-            console.log(`  Melody note ${index + 1}: ${note} (${noteTime.toFixed(2)}s)`);
+            console.log(`  Melody note ${index + 1}: ${note} (${noteTime.toFixed(2)}s, duration: ${melodyNoteDuration.toFixed(2)}s)`);
 
             try {
                 const midiNote = noteToMidi(note);
@@ -735,7 +746,7 @@ async function playMusicWithChords() {
                         volume: -2
                     }).toDestination();
 
-                    melodySynth.triggerAttackRelease(note, noteDuration * 0.8, noteTime, 0.7);
+                    melodySynth.triggerAttackRelease(note, melodyNoteDuration * 0.8, noteTime, 0.7);
                 }
 
                 setTimeout(() => {
@@ -745,7 +756,7 @@ async function playMusicWithChords() {
                             if (visual) {
                                 visual.noteOff(midiNote);
                             }
-                        }, noteDuration * 800);
+                        }, melodyNoteDuration * 800);
                     }
                 }, (noteTime - (typeof Tone !== 'undefined' ? Tone.now() : Date.now() / 1000)) * 1000);
             } catch (e) {
@@ -754,8 +765,50 @@ async function playMusicWithChords() {
         });
     }
 
-    console.log('All playback events scheduled');
+    console.log('All playback events scheduled with matched timing');
 }
+
+// ========== 额外优化：添加速度控制选项 ==========
+
+// 添加全局速度控制变量
+let globalSpeedMultiplier = 1.0; // 1.0 = 正常速度, 0.5 = 一半速度, 2.0 = 两倍速度
+
+// 修改时长计算函数，支持速度调节
+function calculateDurationWithSpeed(baseDuration) {
+    return baseDuration / globalSpeedMultiplier;
+}
+
+// 提供速度控制接口
+window.musicSpeedControl = {
+    setSpeed: function(speed) {
+        globalSpeedMultiplier = Math.max(0.1, Math.min(3.0, speed)); // 限制在0.1x到3x之间
+        console.log(`🎵 播放速度设置为: ${globalSpeedMultiplier}x`);
+    },
+
+    slower: function() {
+        this.setSpeed(globalSpeedMultiplier * 0.8);
+    },
+
+    faster: function() {
+        this.setSpeed(globalSpeedMultiplier * 1.25);
+    },
+
+    reset: function() {
+        this.setSpeed(1.0);
+    },
+
+    getSpeed: function() {
+        return globalSpeedMultiplier;
+    }
+};
+
+console.log('🎵 音乐速度控制已加载');
+console.log('💡 使用方法:');
+console.log('- musicSpeedControl.setSpeed(0.5)  // 半速播放');
+console.log('- musicSpeedControl.setSpeed(2.0)  // 两倍速播放');
+console.log('- musicSpeedControl.slower()       // 减速');
+console.log('- musicSpeedControl.faster()       // 加速');
+console.log('- musicSpeedControl.reset()        // 重置为正常速度');
 
 function clearContent() {
     const userInput = document.getElementById('userInput');
@@ -797,10 +850,10 @@ async function playMusic() {
             duration: '2n'
         }));
     } else {
-        contentToPlay = generatedResult.output.map(note => ({
-            type: 'note',
-            value: note,
-            duration: '8n'
+        contentToPlay = generatedResult.input.map(note => ({
+            type: 'chord',
+            value: chord,
+            duration: '2n'
         }));
     }
 
@@ -1138,315 +1191,7 @@ window.addEventListener('blur', () => {
 window.addEventListener('focus', () => {
     if (keyboardInput) keyboardInput.enable();
 });
-//
-// // ============================================================================
-// // 🚀 性能优化模块 - 直接添加到 app.js 末尾
-// // ============================================================================
-//
-// console.log('🚀 启动性能优化模块...');
-//
-// // 优化相关变量
-// let optimizationCache = new Map();
-// let optimizationTimers = {
-//     input: null,
-//     realtime: null,
-//     prediction: null
-// };
-//
-// // ============================================================================
-// // 🛠️ 防重复播放机制 - 添加到优化模块开头
-// // ============================================================================
-// let isAutoPlaying = false;
-// let lastPlayTime = 0;
-//
-// // 包装播放函数，添加防重复逻辑
-// function safePlayMusic() {
-//     const now = Date.now();
-//     if (isAutoPlaying || (now - lastPlayTime < 1000)) {
-//         console.log('⏸️ 跳过重复播放');
-//         return;
-//     }
-//
-//     isAutoPlaying = true;
-//     lastPlayTime = now;
-//
-//     if (typeof playMusicWithChords === 'function') {
-//         playMusicWithChords();
-//
-//         // 5秒后重置防重复标志
-//         setTimeout(() => {
-//             isAutoPlaying = false;
-//             console.log('🎵 播放保护重置');
-//         }, 3000);
-//     }
-// }
-//
-// // ============================================================================
-// // 🚀 方案1: 减少延迟时间（立即生效）
-// // ============================================================================
-// function optimizeDelays() {
-//     console.log('⚡ 优化方案1: 减少延迟时间');
-//
-//     // 查找并优化现有的输入监听器
-//     const userInput = document.getElementById('userInput');
-//     if (userInput) {
-//         // 移除现有的慢速监听器，添加快速监听器
-//         const newInput = userInput.cloneNode(true);
-//         userInput.parentNode.replaceChild(newInput, userInput);
-//
-//         // 🚀 超快速输入处理 - 0.5秒触发
-//         newInput.addEventListener('input', function(event) {
-//             console.log('⚡ 快速输入检测:', event.target.value);
-//
-//             if (optimizationTimers.input) {
-//                 clearTimeout(optimizationTimers.input);
-//             }
-//
-//             optimizationTimers.input = setTimeout(async () => {
-//                 const inputValue = event.target.value.trim();
-//                 if (inputValue) {
-//                     console.log('⚡ 0.5秒快速生成');
-//                     try {
-//                         await generateContentWithAPI();
-//                         if (generatedResult) {
-//                             // 🛠️ 使用安全播放函数，防止重复
-//                             safePlayMusic();
-//                         }
-//                     } catch (error) {
-//                         console.error('快速生成失败:', error);
-//                     }
-//                 }
-//             }, 500);
-//         });
-//
-//         console.log('✅ 输入延迟优化: 1.5秒 → 0.5秒');
-//     }
-// }
-//
-// // ============================================================================
-// // 🚀 方案2: 预测性缓存（智能加速）
-// // ============================================================================
-// function enableSmartCache() {
-//     console.log('🧠 启用智能缓存');
-//
-//     // 重写 generateContentWithAPI 添加缓存
-//     const originalGenerate = generateContentWithAPI;
-//
-//     generateContentWithAPI = async function(silent = false) {
-//         const userInput = document.getElementById('userInput');
-//         if (!userInput) return originalGenerate();
-//
-//         const inputKey = userInput.value.trim();
-//
-//         // 🚀 检查缓存
-//         if (optimizationCache.has(inputKey)) {
-//             console.log('⚡ 使用缓存结果:', inputKey);
-//             const cachedResult = optimizationCache.get(inputKey);
-//             generatedResult = cachedResult;
-//
-//             // 显示缓存结果
-//             displayOptimizedResult(cachedResult, true);
-//             return cachedResult;
-//         }
-//
-//         // 调用原始函数
-//         console.log('🔄 生成新结果并缓存');
-//         const result = await originalGenerate();
-//
-//         // 🚀 缓存结果
-//         if (result && inputKey) {
-//             optimizationCache.set(inputKey, result);
-//             console.log('✅ 结果已缓存');
-//         }
-//
-//         return result;
-//     };
-//
-//     console.log('✅ 智能缓存已启用');
-// }
-//
-// // ============================================================================
-// // 🚀 方案3: 并行处理（最大性能）
-// // ============================================================================
-// function enableParallelProcessing() {
-//     console.log('🚀 启用并行处理');
-//
-//     // 🚀 预启动音频上下文
-//     if (typeof Tone !== 'undefined') {
-//         Tone.start().then(() => {
-//             console.log('🔊 音频上下文预启动完成');
-//         }).catch(() => {
-//             console.log('🔊 音频上下文将在用户交互时启动');
-//         });
-//     }
-//
-//     // 🚀 后端预热
-//     fetch('http://localhost:5001/api/status')
-//         .then(() => console.log('🔥 后端连接预热成功'))
-//         .catch(() => console.log('⚠️ 后端未启动，将使用模拟模式'));
-//
-//     console.log('✅ 并行处理已启用');
-// }
-//
-// // ============================================================================
-// // 🚀 显示优化结果
-// // ============================================================================
-// function displayOptimizedResult(result, fromCache = false) {
-//     const responseContent = document.getElementById('responseContent');
-//     if (!responseContent || !result) return;
-//
-//     // 格式化输入显示
-//     let formattedInput;
-//     if (Array.isArray(result.input)) {
-//         formattedInput = result.input.map(item => {
-//             if (Array.isArray(item) && item.length === 2) {
-//                 const midiNumber = item[0];
-//                 const duration = item[1];
-//                 const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-//                 const octave = Math.floor(midiNumber / 12) - 1;
-//                 const noteIndex = midiNumber % 12;
-//                 const noteName = `${noteNames[noteIndex]}${octave}`;
-//                 return `${noteName}:${duration}`;
-//             }
-//             return item;
-//         }).join(' ');
-//     } else {
-//         formattedInput = Array.isArray(result.input) ? result.input.join(' ') : result.input;
-//     }
-//
-//     const cacheIndicator = fromCache ?
-//         '<div style="background-color: #e8f5e8; border: 1px solid #4caf50; padding: 8px; margin-bottom: 10px; border-radius: 4px; color: #2e7d32;"><strong>⚡ 闪电响应 (缓存加速)</strong></div>' :
-//         '<div style="background-color: #e3f2fd; border: 1px solid #2196f3; padding: 8px; margin-bottom: 10px; border-radius: 4px; color: #1565c0;"><strong>🚀 快速生成</strong></div>';
-//
-//     const html = `
-//         ${cacheIndicator}
-//         <h3>输入: ${formattedInput}</h3>
-//         <h3>输出: ${Array.isArray(result.output) ? result.output.join(' ') : result.output}</h3>
-//         <p>${result.description}</p>
-//     `;
-//
-//     responseContent.innerHTML = html;
-// }
-//
-// // ============================================================================
-// // 🚀 一键应用所有优化
-// // ============================================================================
-// function applyAllOptimizations() {
-//     console.log('🚀 应用所有性能优化...');
-//
-//     try {
-//         optimizeDelays();
-//         console.log('✅ 延迟优化完成');
-//     } catch (e) {
-//         console.error('延迟优化失败:', e);
-//     }
-//
-//     try {
-//         enableSmartCache();
-//         console.log('✅ 智能缓存完成');
-//     } catch (e) {
-//         console.error('智能缓存失败:', e);
-//     }
-//
-//     try {
-//         enableParallelProcessing();
-//         console.log('✅ 并行处理完成');
-//     } catch (e) {
-//         console.error('并行处理失败:', e);
-//     }
-//
-//     console.log('');
-//     console.log('🎉 性能优化完成！提升效果:');
-//     console.log('- ⚡ 输入响应: 1.5秒 → 0.5秒');
-//     console.log('- 🧠 智能缓存: 重复输入秒级响应');
-//     console.log('- 🚀 并行处理: 后端预热 + 音频预启动');
-//     console.log('- 🎵 播放延迟: 完全消除');
-//     console.log('- 🛠️ 防重复播放: 1秒内重复调用自动跳过');
-//     console.log('');
-//     console.log('💡 测试方法: 输入 "C4 E4 G4" 感受加速效果！');
-// }
-//
-// // ============================================================================
-// // 🚀 立即启动优化
-// // ============================================================================
-//
-// // 页面加载完成后自动启用优化
-// if (document.readyState === 'loading') {
-//     document.addEventListener('DOMContentLoaded', function() {
-//         setTimeout(applyAllOptimizations, 800);
-//     });
-// } else {
-//     // 如果页面已经加载完成，立即启用
-//     setTimeout(applyAllOptimizations, 100);
-// }
-//
-// // 🚀 提供手动控制接口
-// window.speedBoost = {
-//     enable: applyAllOptimizations,
-//     clearCache: () => {
-//         optimizationCache.clear();
-//         console.log('🗑️ 缓存已清空');
-//     },
-//     showCache: () => {
-//         console.log('📊 当前缓存:', Array.from(optimizationCache.keys()));
-//     },
-//     // 🛠️ 新增播放控制
-//     resetPlayLock: () => {
-//         isAutoPlaying = false;
-//         console.log('🔓 播放锁定已重置');
-//     }
-// };
-//
-// console.log('🚀 性能优化模块已加载');
-// console.log('💡 手动控制: speedBoost.enable(), speedBoost.clearCache(), speedBoost.resetPlayLock()');
-//
-// // ============================================================================
-// // 🚀 键盘输入优化（如果存在）
-// // ============================================================================
-// setTimeout(() => {
-//     if (typeof keyboardInput !== 'undefined' && keyboardInput) {
-//         console.log('🎹 优化键盘输入响应');
-//
-//         // 备份原始方法
-//         if (keyboardInput.addNoteToUserInput && !keyboardInput._optimized) {
-//             const originalAddNote = keyboardInput.addNoteToUserInput;
-//
-//             keyboardInput.addNoteToUserInput = function(noteWithOctave, keyCode) {
-//                 // 调用原始方法
-//                 originalAddNote.call(this, noteWithOctave, keyCode);
-//
-//                 // 🚀 超快响应 - 0.3秒
-//                 if (optimizationTimers.realtime) {
-//                     clearTimeout(optimizationTimers.realtime);
-//                 }
-//
-//                 optimizationTimers.realtime = setTimeout(async () => {
-//                     const userInput = document.getElementById('userInput');
-//                     if (userInput && userInput.value.trim()) {
-//                         console.log('🎹 键盘输入快速生成');
-//                         try {
-//                             await generateContentWithAPI();
-//                             if (generatedResult) {
-//                                 // 🛠️ 使用安全播放函数
-//                                 safePlayMusic();
-//                             }
-//                         } catch (error) {
-//                             console.error('键盘输入生成失败:', error);
-//                         }
-//                     }
-//                 }, 300);
-//             };
-//
-//             keyboardInput._optimized = true;
-//             console.log('✅ 键盘输入已优化');
-//         }
-//     }
-// }, 1500);
-// ============================================================================
-// 🚀 音乐应用加速优化补丁 - 最小改动版本
-// ============================================================================
 
-// 将这段代码添加到 app.js 的末尾，或者替换现有的性能优化部分
 
 console.log('🚀 启动音乐应用加速优化...');
 
@@ -1489,7 +1234,7 @@ function optimizeInputDelay() {
                     console.error('快速生成失败:', error);
                 }
             }
-        }, 300); // 1500ms → 300ms
+        }, 100); // 1500ms → 300ms
     });
 
     console.log('✅ 输入延迟优化: 1.5秒 → 0.3秒');
@@ -1633,7 +1378,7 @@ function preloadOptimizations() {
 }
 
 // ============================================================================
-// 应用所有优化
+// Optimize apply
 // ============================================================================
 
 function applySpeedOptimizations() {
@@ -1691,3 +1436,216 @@ window.musicSpeedBoost = {
 console.log('🚀 音乐应用加速补丁已加载');
 console.log('💡 手动控制: musicSpeedBoost.apply() / .clearCache() / .resetPlayLock()');
 
+
+// ====================================================================
+// Arco calls to obtain real-time music data
+// ====================================================================
+
+function getRealtimeMusicDataForArco() {
+    // """
+    // Arco调用此函数获取最新的完整音乐句子
+    //
+    // Returns:
+    //     {
+    //         melody_notes: [
+    //             {note: 60, timestamp: 1.0, duration: 0.5},
+    //             {note: 64, timestamp: 1.5, duration: 0.5},
+    //             {note: 67, timestamp: 2.0, duration: 0.5}
+    //         ],
+    //         chord_progression: [
+    //             {chord: "Cmaj7", timestamp: 1.0, duration: 2.0},
+    //             {chord: "Am7", timestamp: 3.0, duration: 2.0}
+    //         ],
+    //         phrase_start_time: 1.0,
+    //         phrase_end_time: 4.0,
+    //         phrase_duration: 3.0,
+    //         generated_time: 1234567890.123
+    //     }
+    //     或 null (如果没有新数据)
+    // """
+
+    if (lastMusicData) {
+        const data = lastMusicData;
+        lastMusicData = null;  // 取出后清空，避免重复
+        console.log('🎵 Arco获取音乐数据:', data);
+        return data;
+    }
+
+    return null;  // 没有新数据
+}
+
+// // ====================================================================
+// // 🎯 修改现有的 generateContentWithAPI 函数 - 最小改动
+// // ====================================================================
+//
+// // 在现有的 generateContentWithAPI 函数成功生成后添加这段代码
+// async function generateContentWithAPI() {
+//     // ... 现有代码保持不变 ...
+//
+//     try {
+//         // ... 现有的生成逻辑 ...
+//
+//         // 🆕 在生成成功后添加以下代码 (在显示结果之前)
+//         if (generatedResult && generatedResult.input && generatedResult.output) {
+//             // 收集完整音乐数据给Arco
+//             collectMusicDataForArco(generatedResult);
+//         }
+//
+//         // ... 现有的显示逻辑保持不变 ...
+//
+//     } catch (error) {
+//         // ... 现有的错误处理保持不变 ...
+//     }
+// }
+
+// ====================================================================
+//  Collect music data for Arco
+// ====================================================================
+
+function collectMusicDataForArco(result) {
+    // """
+    //     收集生成的音乐数据，格式化后供Arco使用
+    //
+    //     Args:
+    //         result: generateContentWithAPI的结果
+    // """
+
+    try {
+        const currentTime = Date.now() / 1000;
+        const phraseStartTime = currentTime;
+
+        // 1. 处理输入旋律 - 每个音符独立时间信息
+        let melodyNotes = [];
+        let noteTime = phraseStartTime;
+        const noteInterval = 0.5;  // 每个音符间隔0.5秒
+        const noteDuration = 0.4;  // 每个音符持续0.4秒
+
+        if (Array.isArray(result.input)) {
+            result.input.forEach((item, index) => {
+                let midiNote = null;
+                let actualDuration = noteDuration;
+
+                if (Array.isArray(item) && item.length >= 2) {
+                    // 格式：[midi, duration]
+                    midiNote = item[0];
+                    // 将duration转换为实际秒数 (假设duration是16分音符单位)
+                    actualDuration = (item[1] * 0.125) || noteDuration;
+                } else if (typeof item === 'string') {
+                    // 音符名称转MIDI
+                    midiNote = noteToMidi(item);
+                } else if (typeof item === 'number') {
+                    // 直接是MIDI号
+                    midiNote = item;
+                }
+
+                if (midiNote !== null) {
+                    melodyNotes.push({
+                        note: midiNote,
+                        timestamp: noteTime,
+                        duration: actualDuration
+                    });
+                    noteTime += noteInterval;
+                }
+            });
+        }
+
+        // 2. 处理生成的和弦 - 每个和弦独立时间信息
+        let chordProgression = [];
+        if (Array.isArray(result.output) && result.output.length > 0) {
+            const totalMelodyDuration = melodyNotes.length * noteInterval;
+            const chordStartTime = phraseStartTime + totalMelodyDuration + 0.2; // 旋律结束后0.2秒开始和弦
+            const chordDuration = totalMelodyDuration / result.output.length; // 和弦均分旋律时长
+
+            result.output.forEach((chord, index) => {
+                chordProgression.push({
+                    chord: chord,
+                    timestamp: chordStartTime + (index * chordDuration),
+                    duration: chordDuration
+                });
+            });
+        }
+
+        // 3. 计算整体时间信息
+        const phraseEndTime = Math.max(
+            melodyNotes.length > 0 ? melodyNotes[melodyNotes.length - 1].timestamp + melodyNotes[melodyNotes.length - 1].duration : phraseStartTime,
+            chordProgression.length > 0 ? chordProgression[chordProgression.length - 1].timestamp + chordProgression[chordProgression.length - 1].duration : phraseStartTime
+        );
+
+        // 4. 构建完整音乐数据
+        const musicData = {
+            melody_notes: melodyNotes,
+            chord_progression: chordProgression,
+            phrase_start_time: phraseStartTime,
+            phrase_end_time: phraseEndTime,
+            phrase_duration: phraseEndTime - phraseStartTime,
+            generated_time: currentTime,
+            mode: currentMode,  // 使用现有的模式变量
+            source: "web_input"
+        };
+
+        // 5. 存储最新数据
+        lastMusicData = musicData;
+
+        // 6. 添加到历史缓冲区 (可选)
+        arcoMusicBuffer.push(musicData);
+
+        // 保持缓冲区大小
+        if (arcoMusicBuffer.length > 10) {
+            arcoMusicBuffer.shift();  // 移除最老的数据
+        }
+
+        console.log('🎼 收集到完整音乐数据:');
+        console.log(`   旋律: ${melodyNotes.length}个音符`);
+        console.log(`   和弦: ${chordProgression.length}个和弦`);
+        console.log(`   总时长: ${(phraseEndTime - phraseStartTime).toFixed(2)}秒`);
+
+    } catch (error) {
+        console.error('❌ 收集音乐数据失败:', error);
+    }
+}
+
+// ====================================================================
+// Interfaces
+// ====================================================================
+
+function getAllMusicDataForArco() {
+    // """
+    // 获取所有历史音乐数据 (如果Arco需要)
+    // """
+    return arcoMusicBuffer.slice(); // 返回副本
+}
+
+function clearArcoMusicBuffer() {
+    // """
+    // 清空音乐数据缓冲区
+    // """
+    arcoMusicBuffer = [];
+    lastMusicData = null;
+    console.log('🗑️ Arco音乐缓冲区已清空');
+}
+
+function getArcoDataStatus() {
+    // """
+    // 获取数据状态
+    // """
+    return {
+        has_new_data: lastMusicData !== null,
+        buffer_size: arcoMusicBuffer.length,
+        last_update: lastMusicData ? lastMusicData.generated_time : null
+    };
+}
+
+// ====================================================================
+// Interfaces expose to the global (for Arco to call)
+// ====================================================================
+
+// 主要接口
+window.getRealtimeMusicDataForArco = getRealtimeMusicDataForArco;
+
+// 可选接口
+window.getAllMusicDataForArco = getAllMusicDataForArco;
+window.clearArcoMusicBuffer = clearArcoMusicBuffer;
+window.getArcoDataStatus = getArcoDataStatus;
+
+console.log('🎵 Arco音乐数据接口已加载');
+console.log('💡 Arco调用方法: getRealtimeMusicDataForArco()');
