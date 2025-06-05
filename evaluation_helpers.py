@@ -87,7 +87,6 @@ def viewPhrase(input, output, songName="Harmonized Excerpt"):
 
   score.metadata.title = songName
 
-  # 保存为MusicXML和MIDI文件（而不是尝试打开）
   xml_path = os.path.join(output_dir, f"{songName}.xml")
   midi_path = os.path.join(output_dir, f"{songName}.mid")
 
@@ -96,7 +95,6 @@ def viewPhrase(input, output, songName="Harmonized Excerpt"):
 
   print(f"Files saved to: {xml_path} and {midi_path}")
 
-  # 仍然保留显示功能，但将其注释掉（如果您想要启用它的话）
   # score.show()
 
 
